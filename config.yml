@@ -1,0 +1,22 @@
+credentials:
+  username: matthaiosmarkatis@gmail.com # Replace with your actual email or use ENC() later
+  password: Bakumonsuno45! # Replace with your actual password or use ENC() later
+search_profiles:
+  - name: graduate-data-uk
+    query: "graduate"
+    location: "United Kingdom"
+    # Add geoId - Find the correct one for your target location(s)
+    # Example for UK: 101165590, Sheffield: 104470941
+    geoId: 104470941
+    filters:
+      distance_km: 15 # Options: 8, 15, 40, 80
+      date_posted: "past_week" # past_24h / past_week / past_month / any_time
+      remote: ["on_site", "hybrid"] # on_site / remote / hybrid
+      experience: [] # internship, entry_level, associate, mid_senior_level, director, executive
+runtime:
+  headless: false # Set to false for visibility
+  accept_cookies_selector: 'button[action-type="ACCEPT"]'
+  random_delay_ms: [800, 2200]
+  max_tabs: 1
+  log_level: INFO
+  proxy_pool: [] # optional rotating proxies 

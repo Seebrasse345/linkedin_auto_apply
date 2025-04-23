@@ -1,0 +1,14 @@
+{
+  "Mobile phone number": "YOUR_PHONE_NUMBER",
+  "Location (city)": "YOUR_CITY",
+  "How many years*experience": "YOUR_YEARS_EXPERIENCE",
+  "Salary expectation": "YOUR_SALARY_EXPECTATION",
+  "Cover letter": "@file:cover_letter.pdf",
+  "gender": "Prefer not to say",
+  "ethnicity": "White",
+  "disability": {
+    "status": "No",
+    "description": ""
+  },
+  "used_cover": false
+} 

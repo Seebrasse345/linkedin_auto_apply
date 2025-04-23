@@ -1,0 +1,13 @@
+playwright>=1.40.0
+PyYAML>=6.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+tenacity>=8.2.0
+rapidfuzz>=3.0.0
+pydantic>=2.0.0
+# Optional:
+# rich
+# typer
+# 2captcha-python
+# aiohttp
+# fastapi 
