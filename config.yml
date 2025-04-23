@@ -3,15 +3,15 @@ credentials:
   password: Bakumonsuno45! # Replace with your actual password or use ENC() later
 search_profiles:
   - name: graduate-data-uk
-    query: "graduate"
+    query: "Data"
     location: "United Kingdom"
     # Add geoId - Find the correct one for your target location(s)
     # Example for UK: 101165590, Sheffield: 104470941
-    geoId: 104470941
+    geoId: 101165590 # Sheffield
     filters:
       distance_km: 15 # Options: 8, 15, 40, 80
-      date_posted: "past_week" # past_24h / past_week / past_month / any_time
-      remote: ["on_site", "hybrid"] # on_site / remote / hybrid
+      date_posted: "past_24h" # past_24h / past_week / past_month / any_time
+      remote: ["remote"] # on_site / remote / hybrid
       experience: [] # internship, entry_level, associate, mid_senior_level, director, executive
 runtime:
   headless: false # Set to false for visibility

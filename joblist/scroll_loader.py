@@ -4,7 +4,7 @@ import random
 import re
 from playwright.sync_api import Page, Locator, Error as PlaywrightError
 from typing import List, Dict, Set, Optional
-from apply.wizard import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
+from apply import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,11 @@ JOB_TITLE_SELECTOR = f"{JOB_LINK_SELECTOR} strong" # Title often within strong t
 # Separate company selectors for sequential fallback
 JOB_COMPANY_SELECTOR_PRIMARY = "span.job-card-container__primary-description"
 JOB_COMPANY_SELECTOR_SECONDARY = "a.job-card-container__company-name" 
+
+# Pagination selectors
+PAGINATION_CONTAINER_SELECTOR = 'div.jobs-search-pagination'
+PAGINATION_NEXT_BUTTON_SELECTOR = 'button.jobs-search-pagination__button--next'
+PAGINATION_PAGE_INDICATOR_SELECTOR = 'p.jobs-search-pagination__page-state'
 
 # Default settings
 SCROLL_INCREMENT = 3  # Scroll every Nth card (increased for faster scrolling)
@@ -79,16 +84,17 @@ def _extract_job_id(card: Locator) -> Optional[str]:
         logger.debug(f"Quick Job ID extraction failed for card: {e}")
     return job_id
 
-def load_all_job_cards(page: Page) -> List[Dict[str, str]]:
+def load_all_job_cards(page: Page):
     """Loads job cards via scrolling, then clicks each card to extract details from the main pane.
-
+    
     1. Determines initial max number of job card elements in DOM.
     2. Scrolls cards at indices (0, SCROLL_INCREMENT, ...) up to that max count into view.
     3. Iterates through located cards, clicks each, waits for details pane, extracts.
-
+    4. Checks for pagination at the bottom and navigates to next pages if available.
+    
     Args:
         page: The Playwright Page object.
-
+    
     Returns:
         A list of dictionaries containing details of unique job cards found.
     """
@@ -306,10 +312,68 @@ def load_all_job_cards(page: Page) -> List[Dict[str, str]]:
                 logger.error(f"  Unexpected error processing card {i+1} (ID: {job_id}): {e_card}")
                 processed_count += 1
 
-        logger.info(f"Extraction phase complete. Processed {processed_count}/{final_card_count} cards found, added {added_count} unique jobs.")
+        logger.info(f"Extraction phase complete for current page. Processed {processed_count}/{final_card_count} cards found, added {added_count} unique jobs.")
+        
+        # Check if there are more pages to navigate to
+        all_pages_processed = check_and_navigate_to_next_page(page)
+        if not all_pages_processed:
+            # If we successfully navigated to a new page, recursively process that page
+            logger.info("Processing jobs on the next page...")
+            page.wait_for_timeout(3000)  # Wait for the new page to load
+            # Add jobs from the next page to our list
+            next_page_jobs = load_all_job_cards(page)
+            job_data_list.extend(next_page_jobs)
+            logger.info(f"Added {len(next_page_jobs)} jobs from next page. Total unique jobs: {len(job_data_list)}")
 
     except Exception as e_extract_phase:
         logger.error(f"Error during the final extraction phase: {e_extract_phase}")
         return job_data_list # Return whatever was collected before the error
 
     return job_data_list
+
+
+def check_and_navigate_to_next_page(page: Page) -> bool:
+    """Checks if there are more pages of job results and navigates to the next page if available.
+    
+    Args:
+        page: The Playwright Page object.
+        
+    Returns:
+        bool: True if all pages have been processed (no more pages), False if navigated to a new page.
+    """
+    try:
+        # Check if pagination container exists
+        pagination = page.locator(PAGINATION_CONTAINER_SELECTOR)
+        if pagination.count() == 0:
+            logger.info("No pagination found. All jobs processed.")
+            return True
+        
+        # Check if there's a "Next" button
+        next_button = page.locator(PAGINATION_NEXT_BUTTON_SELECTOR)
+        if next_button.count() == 0:
+            logger.info("No 'Next' button found. All pages processed.")
+            return True
+        
+        # Log the current page information if available
+        page_indicator = page.locator(PAGINATION_PAGE_INDICATOR_SELECTOR)
+        if page_indicator.count() > 0:
+            page_text = page_indicator.inner_text()
+            logger.info(f"Current pagination: {page_text}")
+        
+        # Click the Next button
+        logger.info("Clicking 'Next' button to navigate to the next page of job results...")
+        next_button.click()
+        
+        # Wait for navigation and for the job list to reload
+        page.wait_for_selector(JOB_LIST_SELECTOR, timeout=10000)
+        page.wait_for_timeout(2000)  # Additional wait for content to stabilize
+        
+        # Successfully navigated to next page
+        return False
+        
+    except PlaywrightError as e:
+        logger.error(f"Error navigating to next page: {e}")
+        return True  # Treat as if all pages are processed to avoid infinite loops
+    except Exception as e:
+        logger.error(f"Unexpected error checking pagination: {e}")
+        return True

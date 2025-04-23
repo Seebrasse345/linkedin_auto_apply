@@ -9,7 +9,7 @@ from pathlib import Path # Added for ROOT_PATH calculation
 from browser.context import load_config, get_authenticated_page
 from joblist.search import construct_search_url
 from joblist.scroll_loader import load_all_job_cards # Import the new function
-from apply.wizard import ApplicationWizard
+from apply import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
 
 # Define root path relative to this file (main.py)
 ROOT_PATH = Path(__file__).parent.parent

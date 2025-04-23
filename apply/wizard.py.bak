@@ -761,464 +761,66 @@ class ApplicationWizard:
                         label_element = label.first
                 
                 # If no label text, try radio value
-                if not option_text:
-                    option_text = radio.get_attribute("value") or f"Option {i+1}"
-                
-                options.append(option_text)
-                option_elements.append(radio)
-                option_labels.append(label_element)
-            
-            # Log what we found
-            logger.info(f"Found {len(options)} radio options for '{field_label}': {options}")
-            
-            # If options are empty, this is likely not a valid radio group
-            if not options:
-                logger.warning(f"No valid options found for radio group '{field_label}' - skipping")
-                return True
+                try:
+                    # Fix the radio button counting issue
+                    radio_options = []
+                    for radio in group_elements:
+                        try:
+                            radio_id = radio.get_attribute("id")
+                            if radio_id:
+                                label = self.page.locator(f"label[for='{radio_id}']")
+                                if label.count() > 0:
+                                    option_text = label.first.inner_text().strip()
+                                    if option_text:
+                                        radio_options.append(option_text)
+                        except Exception as inner_e:
+                            logger.error(f"Error getting radio option text: {inner_e}")
+                    
+                    logger.info(f"Found {len(radio_options)} radio options for '{group_name}': {radio_options}")
+                    if not radio_options:
+                        logger.warning(f"No valid options found for radio group '{group_name}' - skipping")
+                        continue
                 
             # If no answer is stored, prompt the user
             if not answer:
                 # Check for common yes/no patterns before prompting
-                if self._should_auto_answer(field_label, options):
-                    auto_answer = self._get_auto_answer(field_label, options)
-                    logger.info(f"Using auto-answer '{auto_answer}' for '{field_label}'")
-                    answer = auto_answer
-                else:
-                    # Show options to user
-                    print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
-                    for i, option in enumerate(options):
-                        print(f"{i+1}. {option}")
-                    
-                    try:
-                        selection = input(f"Enter option number (1-{len(options)}): ")
-                        index = int(selection) - 1
-                        if 0 <= index < len(options):
-                            answer = options[index]
-                        else:
-                            answer = options[0]  # Default to first option
-                    except (ValueError, KeyboardInterrupt):
-                        answer = options[0]  # Default to first option
-                    
-                    # Save this answer for future use
-                    self.answers[field_label] = answer
-                    self._save_answers()
-            
-            # Find and click the matching option
-            selected = False
-            for i, option_text in enumerate(options):
-                if answer and (answer.lower() == option_text.lower() or 
-                    answer.lower() in option_text.lower() or 
-                    option_text.lower() in answer.lower()):
-                    try:
-                        # Try label click first if available
-                        if option_labels[i] is not None:
-                            option_labels[i].click()
-                            logger.info(f"Selected radio option '{option_text}' (via label) for '{field_label}'")
-                        else:
-                            option_elements[i].click()
-                            logger.info(f"Selected radio option '{option_text}' for '{field_label}'")
-                        selected = True
-                        break
-                    except PlaywrightError as e:
-                        logger.warning(f"Error clicking radio: {e}. Trying JS click.")
-                        try:
-                            option_elements[i].evaluate("el => el.click()")
-                            logger.info(f"Selected radio option '{option_text}' (via JS) for '{field_label}'")
-                            selected = True
-                            break
-                        except PlaywrightError as js_e:
-                            logger.error(f"JS click also failed: {js_e}")
-            
-            # If no match found, select first option
-            if not selected and len(option_elements) > 0:
-                try:
-                    if option_labels[0] is not None:
-                        option_labels[0].click()
-                        logger.info(f"Selected first radio option '{options[0]}' (via label) for '{field_label}'")
-                    else:
-                        option_elements[0].click()
-                        logger.info(f"Selected first radio option '{options[0]}' for '{field_label}'")
-                except PlaywrightError as e:
-                    logger.warning(f"Error clicking first radio: {e}. Trying JS click.")
-                    try:
-                        option_elements[0].evaluate("el => el.click()")
-                        logger.info(f"Selected first radio option '{options[0]}' (via JS) for '{field_label}'")
-                    except PlaywrightError as js_e:
-                        logger.error(f"JS click also failed: {js_e}")
-                        return False
-            
-            return True
-        except PlaywrightError as e:
-            logger.error(f"Error processing radio group '{field_label}': {e}")
-            return False
-    
-    def _should_auto_answer(self, field_label: str, options: List[str]) -> bool:
-        """Determine if we should auto-answer this question instead of prompting."""
-        # IMPORTANT: Education and degree questions should always prompt the user
-        # These are critical qualifications that need human input
-        if any(kw in field_label.lower() for kw in ['degree', 'education', 'bachelor', 'master', 'phd', 'diploma']):
-            logger.info(f"Education-related question will prompt for user input: '{field_label}'")
-            return False
-        
-        # Check if it's a simple yes/no question
-        if len(options) == 2 and any('yes' in opt.lower() for opt in options) and any('no' in opt.lower() for opt in options):
-            # Auto-answer yes/no for common questions
-            if any(kw in field_label.lower() for kw in ['disability', 'commut', 'locat', 'relocat', 
-                                                      'experience', 'work', 'skill', 'qualified', 
-                                                      'eligible']):
-                return True
-        
-        # Auto-answer for gender, ethnicity, veteran status
-        if any(kw in field_label.lower() for kw in ['gender', 'sex', 'ethnicity', 'race', 'veteran', 'military']):
-            return True
-            
-        # Ask the user for anything not specifically categorized
-        return False
-    
-    def _get_auto_answer(self, field_label: str, options: List[str]) -> str:
-        """Get an auto-generated answer based on field type and options."""
-        # Handles common yes/no questions
-        if len(options) == 2 and 'yes' in options[0].lower() and 'no' in options[1].lower():
-            # For disability questions, prefer "No"
-            if 'disability' in field_label.lower() or 'disabled' in field_label.lower():
-                return "No"
-            # For experience or qualification questions, prefer "Yes"
-            elif any(kw in field_label.lower() for kw in ['experience', 'work', 'skill', 'qualified', 'eligible']):
-                return "Yes"
-            # For location/commute questions, prefer "Yes"
-            elif any(kw in field_label.lower() for kw in ['commut', 'locat', 'relocat', 'move', 'travel']):
-                return "Yes"
-            # For education questions, prefer "Yes" (having the degree is better than not)
-            elif any(kw in field_label.lower() for kw in ['degree', 'education', 'bachelor', 'master']):
-                return "Yes"
-        
-        # For demographic questions
-        if 'gender' in field_label.lower() or 'sex' in field_label.lower():
-            # Look for "prefer not to say"
-            for option in options:
-                if 'prefer not' in option.lower():
-                    return option
-        
-        if 'ethnicity' in field_label.lower() or 'race' in field_label.lower():
-            # Look for "prefer not to say" first, then "white"
-            for option in options:
-                if 'prefer not' in option.lower():
-                    return option
-            for option in options:
-                if 'white' in option.lower():
-                    return option
-        
-        if 'veteran' in field_label.lower() or 'military' in field_label.lower():
-            # Default to "No" for veteran status
-            for option in options:
-                if option.lower() == 'no':
-                    return option
-        
-        # Default to first option if no special case
-        return options[0] if options else ""
-        
-    def _process_form_fields(self) -> bool:
-        """Process all form fields on the current step."""
-        success = True
-        try:
-            modal = self.page.locator(APPLICATION_MODAL_SELECTOR)
-            if modal.count() == 0:
-                logger.error("Application form modal not found")
-                return False
-            
-            app_modal = modal.first
-            logger.info("Application form modal found, processing fields")
-            
-            # Process all input types in the modal
-            text_inputs = app_modal.locator("input[type='text']:visible, input:not([type]):visible")
-            logger.info(f"Found {text_inputs.count()} text input fields in form")
-            
-            for i in range(text_inputs.count()):
-                if not self._process_text_input(text_inputs.nth(i)):
-                    success = False
-            
-            textareas = app_modal.locator("textarea:visible")
-            logger.info(f"Found {textareas.count()} textarea fields in form")
-            
-            for i in range(textareas.count()):
-                if not self._process_textarea(textareas.nth(i)):
-                    success = False
-            
-            selects = app_modal.locator("select:visible")
-            logger.info(f"Found {selects.count()} select fields in form")
-            
-            for i in range(selects.count()):
-                if not self._process_select(selects.nth(i)):
-                    success = False
-            
-            # Find all fieldsets that contain radio buttons - these are separate question groups
-            radio_fieldsets = app_modal.locator("fieldset:has(input[type='radio']), fieldset:has(div[role='radio'])")
-            if radio_fieldsets.count() > 0:
-                logger.info(f"Found {radio_fieldsets.count()} radio button groups/fieldsets in form")
-                
-                # Process each fieldset as a separate radio button group
-                for i in range(radio_fieldsets.count()):
-                    fieldset = radio_fieldsets.nth(i)
-                    if not self._process_radio_group(fieldset):
-                        success = False
-            else:
-                # Fallback for radio buttons not in fieldsets
-                radio_buttons = app_modal.locator("input[type='radio'], div[role='radio']")
-                logger.info(f"Found {radio_buttons.count()} individual radio buttons in form")
-                
-                if radio_buttons.count() > 0:
-                    # Try to group by name attribute or parent container
-                    grouped_radios = self._group_radio_buttons(radio_buttons)
-                    for group_name, group_elements in grouped_radios.items():
-                        logger.info(f"Processing radio group '{group_name}' with {len(group_elements)} options")
-                        if not self._process_radio_from_group(group_name, group_elements):
-                            success = False
-            
-            checkbox_groups = app_modal.locator("input[type='checkbox']:visible, div[role='checkbox']:visible")
-            logger.info(f"Found {checkbox_groups.count()} checkbox fields in form")
-            
-            if checkbox_groups.count() > 0:
-                if not self._process_checkbox(checkbox_groups):
-                    success = False
-            
-            # Process resume selector if present
-            if not self._process_resume():
-                success = False
-            
-            return success
-            
-        except PlaywrightError as e:
-            logger.error(f"Error processing form fields: {e}")
-            success = False
-        
-        return success
-    
-    def start_application(self, job_data: Dict[str, str]) -> str:
-        """Start the application process for a job."""
-        logger.info(f"Starting application for job: {job_data.get('title', 'Unknown')}")
-        
-        try:
-            # Check if job_data contains a flag indicating the Easy Apply button was already clicked
-            if job_data.get('easy_apply_clicked', False):
-                logger.info("Easy Apply button was already clicked, proceeding with application")
-                # No need to click again, just wait for the form to load
-                self.page.wait_for_timeout(1000)
-            else:
-                # Check if we can find an Easy Apply button
-                easy_apply_button = self.page.locator(EASY_APPLY_BUTTON_SELECTOR)
-                if easy_apply_button.count() == 0:
-                    logger.warning("No Easy Apply button found")
-                    self.failed_applications.append({
-                        "job": job_data,
-                        "reason": "No Easy Apply button found",
-                        "timestamp": datetime.now().isoformat()
-                    })
-                    return APPLICATION_FAILURE
-                
-                # Click the Easy Apply button (use first() to handle multiple matches)
-                logger.info("Clicking Easy Apply button")
-                easy_apply_button.first.click()
-                self.page.wait_for_timeout(1500)  # Wait for the form to load (reduced from 2000ms)
-            
-            # Process the application form steps
-            step_count = 0
-            max_steps = 15  # Safety limit
-            previous_form_content = None  # Track previous form content to detect loops
-            duplicate_form_count = 0  # Count how many times we see the same form
-            max_duplicates = 3  # Maximum number of times to try the same form before giving up
-            
-            while step_count < max_steps:
-                logger.info(f"Processing application step {step_count + 1}")
-                
-                # Locate the application modal
-                modal = self.page.locator(APPLICATION_MODAL_SELECTOR)
-                if modal.count() == 0:
-                    logger.warning("Application modal not found during navigation")
-                    self.failed_applications.append({
-                        "job": job_data,
-                        "reason": f"Application modal disappeared at step {step_count + 1}",
-                        "timestamp": datetime.now().isoformat()
-                    })
-                    self._save_application_data()
-                    return APPLICATION_FAILURE
-                
-                app_modal = modal.first
-                
-                # Check if we're in a loop by comparing form content with previous step
-                current_form_content = app_modal.inner_html()
-                if current_form_content == previous_form_content:
-                    duplicate_form_count += 1
-                    logger.warning(f"Detected same form content in consecutive steps ({duplicate_form_count}/{max_duplicates})")
-                    
-                    if duplicate_form_count >= max_duplicates:
-                        logger.error(f"Detected infinite loop in application form - same form appeared {max_duplicates} times")
-                        
-                        # Try a different approach - click a different next button if available
-                        all_buttons = app_modal.locator("button")
-                        found_alternative = False
-                        
-                        for i in range(all_buttons.count()):
-                            button = all_buttons.nth(i)
-                            button_text = button.inner_text().lower()
-                            if any(word in button_text for word in ["next", "continue", "submit", "review"]):
-                                if i > 0:  # Not the first button we've been clicking
-                                    logger.info(f"Trying alternative button with text: {button_text}")
-                                    button.click()
-                                    self.page.wait_for_timeout(2000)
-                                    found_alternative = True
-                                    break
-                        
-                        if not found_alternative:
-                            # Take a debug screenshot
-                            try:
-                                debug_dir = os.path.join(self.data_dir, 'debug')
-                                os.makedirs(debug_dir, exist_ok=True)
-                                screenshot_path = os.path.join(debug_dir, f"form_loop_{step_count+1}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                                self.page.screenshot(path=screenshot_path)
-                                logger.info(f"Saved debug screenshot to {screenshot_path}")
-                            except Exception as e:
-                                logger.error(f"Failed to save debug screenshot: {e}")
-                                
-                            self.failed_applications.append({
-                                "job": job_data,
-                                "reason": f"Infinite loop detected in application form at step {step_count + 1}",
-                                "timestamp": datetime.now().isoformat()
-                            })
-                            self._save_application_data()
-                            return APPLICATION_FAILURE
-                else:
-                    # Reset the counter if form content changed
-                    duplicate_form_count = 0
-                    previous_form_content = current_form_content
-                
-                # Process form fields on current step
-                if not self._process_form_fields():
-                    logger.warning(f"Some fields could not be processed on step {step_count + 1}")
-                
-                self.page.wait_for_timeout(800)  # Wait for fields to be filled (reduced from 1000ms)
-                
-                # Check for Submit button within the modal
-                submit_button = app_modal.locator("button[aria-label='Submit application'], button:has-text('Submit application')")
-                if submit_button.count() > 0:
-                    logger.info("Found Submit button - this is the final step")
-                    try:
-                        # Use evaluate to force a click (more reliable than regular click)
-                        submit_button.first.evaluate("button => button.click()")
-                        self.page.wait_for_timeout(1500)  # Wait for submission
-                        
-                        # Check for Done button - may be in a new modal (check both in modal and whole page)
-                        # First check in current modal if it still exists
-                        if modal.count() > 0:
-                            done_in_modal = app_modal.locator("button[aria-label='Done'], button[aria-label='Dismiss'], button:has-text('Done'), button:has-text('Dismiss')")
-                            if done_in_modal.count() > 0:
-                                logger.info("Found Done button in current modal - application completed successfully")
-                                done_in_modal.first.evaluate("button => button.click()")
-                                self.page.wait_for_timeout(1000)
-                                
-                                # Record successful application
-                                self.successful_applications.append({
-                                    "job": job_data,
-                                    "timestamp": datetime.now().isoformat()
-                                })
-                                self._save_application_data()
-                                return APPLICATION_SUCCESS
-                        
-                        # If not found in modal, check whole page (may be in a different modal)
-                        done_button = self.page.locator("button[aria-label='Done'], button[aria-label='Dismiss'], button:has-text('Done'), button:has-text('Dismiss')")
-                        if done_button.count() > 0:
-                            logger.info("Found Done button in new modal - application completed successfully")
-                            done_button.first.evaluate("button => button.click()")
-                            self.page.wait_for_timeout(1000)
-                            
-                            # Record successful application
-                            self.successful_applications.append({
-                                "job": job_data,
-                                "timestamp": datetime.now().isoformat()
-                            })
-                            self._save_application_data()
-                            return APPLICATION_SUCCESS
-                        else:
-                            logger.warning("Did not find Done button after submission")
-                            self.failed_applications.append({
-                                "job": job_data,
-                                "reason": "No Done button after submission",
-                                "timestamp": datetime.now().isoformat()
-                            })
-                            self._save_application_data()
-                            return APPLICATION_FAILURE
-                    except PlaywrightError as e:
-                        logger.error(f"Error clicking Submit button: {e}")
-                        self.failed_applications.append({
-                            "job": job_data,
-                            "reason": f"Error clicking Submit button: {e}",
-                            "timestamp": datetime.now().isoformat()
-                        })
-                        self._save_application_data()
-                        return APPLICATION_FAILURE
-                
-                # Check for Next button within the modal - using much more specific selectors
-                # For debugging - check what buttons exist in the form
-                all_form_buttons = app_modal.locator("button")
-                logger.info(f"Found {all_form_buttons.count()} total buttons in the form")
-                
-                # Debug: Output all button text for analysis
-                for i in range(min(all_form_buttons.count(), 5)):  # Limit to first 5 to avoid spam
-                    try:
-                        button = all_form_buttons.nth(i)
-                        button_text = button.inner_text().strip()
-                        button_attrs = {}
-                        for attr in ['aria-label', 'id', 'data-easy-apply-next-button', 'class']:
-                            value = button.get_attribute(attr)
-                            if value:
-                                button_attrs[attr] = value
-                        logger.info(f"Button {i+1} text: '{button_text}', attributes: {button_attrs}")
-                    except PlaywrightError:
-                        pass
-                
-                # First try the most specific button - data-easy-apply-next-button (this is the official LinkedIn attribute)
-                next_with_attr = app_modal.locator("[data-easy-apply-next-button]")
-                logger.info(f"Found {next_with_attr.count()} buttons with data-easy-apply-next-button attribute")
-                if next_with_attr.count() > 0:
-                    logger.info("Using official LinkedIn next button with data-easy-apply-next-button attribute")
-                    try:
-                        next_with_attr.first.evaluate("button => button.click()")
-                        self.page.wait_for_timeout(1500)
-                        step_count += 1
-                        continue
-                    except PlaywrightError as e:
+                if self._should_auto_answer(field_label, radio_options):
+{{ ... }}
                         logger.warning(f"Error clicking official next button: {e}, will try alternatives")
-                
+
                 # Then try to find the specific footer Next button
                 footer_next = app_modal.locator("footer button:has-text('Next')")
                 logger.info(f"Found {footer_next.count()} footer Next buttons")
-                if footer_next.count() > 0:
-                    # This is the most reliable button - in the footer of the form
-                    logger.info("Found Next button in form footer - clicking it")
+                # Enhanced check for Submit button using more robust selectors
+                submit_button = app_modal.locator("button[aria-label='Submit application'], button:has-text('Submit application'), button:has-text('Submit'), button.artdeco-button--primary:has-text('Submit'), footer button.artdeco-button--primary")
+                if submit_button.count() > 0:
+                    logger.info(f"Found Submit button - this is the final step (text: '{submit_button.first.inner_text().strip()}')")
                     try:
-                        # Use evaluate to force a click (more reliable than regular click)
-                        footer_next.first.evaluate("button => button.click()")
-                        self.page.wait_for_timeout(1500)  # Wait for next step to load
+                        # Try different click methods for reliability
+                        try:
+                            # First try regular click with increased timeout
+                            submit_button.first.click(timeout=5000)
+                        except PlaywrightError as click_e:
+                            logger.warning(f"Regular click failed: {click_e}. Trying JavaScript click.")
+                            # If regular click fails, try JS click
+                            submit_button.first.evaluate("button => button.click()")
+                        
+                        self.page.wait_for_timeout(2000)  # Wait longer for submission to process
                         step_count += 1
                         continue
                     except PlaywrightError as e:
                         logger.warning(f"Error clicking footer Next button: {e}, will try alternatives")
-                
-                # Try other specific button selectors
-                specific_next = app_modal.locator("button[aria-label='Continue to next step'], button[aria-label='Review your application']")
-                if specific_next.count() > 0:
-                    logger.info("Found specific Next button with aria-label - clicking it")
-                    try:
-                        specific_next.first.evaluate("button => button.click()")
-                        self.page.wait_for_timeout(1500)
-                        step_count += 1
-                        continue
-                    except PlaywrightError as e:
+
+{{ ... }}
                         logger.warning(f"Error clicking specific Next button: {e}, will try alternatives")
+
+                # If no specific button was found and we get here
+                logger.warning(f"No recognized Next button found at step {step_count + 1}")
                 
-                # Last resort - try any button with appropriate text
-                fallback_next = app_modal.locator("button:has-text('Next'), button:has-text('Continue'), button:has-text('Review')")
+                # Try any button with text that looks like a next button as a fallback
+                fallback_next = app_modal.locator("button:has-text('Next'), button:has-text('Continue'), button:has-text('Review'), button:has-text('Submit')")
                 if fallback_next.count() > 0:
-                    logger.info("Using fallback: Found any button with Next/Continue/Review text")
+                    logger.info("Using fallback: Found button with Next/Continue/Review/Submit text")
                     try:
                         # Try each button until one works
                         clicked = False
@@ -1233,24 +835,24 @@ class ApplicationWizard:
                                 break
                             except PlaywrightError:
                                 continue
-                        
+
                         if clicked:
+                            # Check if we found a Done button after clicking (indicates success)
+                            done_button = self.page.locator(DONE_BUTTON_SELECTOR)
+                            if done_button.count() > 0:
+                                logger.info("Found Done button after clicking - application likely completed")
+                                done_button.first.click(timeout=2000)
+                                job_id = job_data.get('id', 'unknown')
+                                self._save_application_result(job_id, True)
+                                return APPLICATION_SUCCESS
+                                
                             step_count += 1
                             continue
                     except PlaywrightError as e:
-                        logger.warning(f"Error with fallback buttons: {e}")
-                    else:
-                        logger.warning("No Next button found - application flow broken")
-                        # Take a screenshot of the current state for debugging
-                        try:
-                            debug_dir = os.path.join(self.data_dir, 'debug')
-                            os.makedirs(debug_dir, exist_ok=True)
-                            screenshot_path = os.path.join(debug_dir, f"failed_step_{step_count+1}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                            self.page.screenshot(path=screenshot_path)
-                            logger.info(f"Saved debug screenshot to {screenshot_path}")
-                        except Exception as e:
-                            logger.error(f"Failed to save debug screenshot: {e}")
-                            
+                        logger.error(f"Error clicking fallback button: {e}")
+                    except Exception as e:
+                        logger.error(f"Unexpected error: {e}")
+{{ ... }}
                         # Record the failed application
                         self._save_application_result(job_data.get('id', 'unknown'), False)
                         return APPLICATION_FAILURE
