@@ -2,6 +2,8 @@ import logging
 import time
 import random
 import re
+import os
+import json
 from playwright.sync_api import Page, Locator, Error as PlaywrightError
 from typing import List, Dict, Set, Optional
 from apply import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
@@ -20,29 +22,38 @@ JOB_COMPANY_SELECTOR_SECONDARY = "a.job-card-container__company-name"
 
 # Pagination selectors
 PAGINATION_CONTAINER_SELECTOR = 'div.jobs-search-pagination'
-PAGINATION_NEXT_BUTTON_SELECTOR = 'button.jobs-search-pagination__button--next'
+PAGINATION_NEXT_BUTTON_SELECTOR = 'button.jobs-search-pagination__button--next, button[aria-label="View next page"]'
 PAGINATION_PAGE_INDICATOR_SELECTOR = 'p.jobs-search-pagination__page-state'
+
+# Used for waiting after pagination click
+JOB_LIST_SELECTOR = 'ul.jobs-search-results__list, div.jobs-search-results-list'
 
 # Default settings
 SCROLL_INCREMENT = 3  # Scroll every Nth card (increased for faster scrolling)
 MAX_SCROLL_ATTEMPTS = 20 # Max scroll attempts to prevent infinite loops (reduced from 30)
 SCROLL_STABILITY_CHECKS = 2 # Stop if DOM count is stable for this many checks (reduced from 3)
-POST_SCROLL_DELAY_MS = 800 # Delay after each scroll_into_view (reduced from 1200ms)
-EXTRACT_TIMEOUT_MS = 3000 # Timeout for extracting text/attributes from elements (reduced from 5000ms)
-QUICK_EXTRACT_TIMEOUT_MS = 1000 # Faster timeout for individual fields (reduced from 2000ms)
-INITIAL_WAIT_MS = 1500 # Wait briefly for initial cards to appear (reduced from 2000ms)
+POST_SCROLL_DELAY_MS = 400 # Delay after each scroll_into_view (reduced from 800ms)
+EXTRACT_TIMEOUT_MS = 2500 # Timeout for extracting text/attributes from elements (reduced from 3000ms)
+QUICK_EXTRACT_TIMEOUT_MS = 800 # Faster timeout for individual fields (reduced from 1000ms)
+INITIAL_WAIT_MS = 1000 # Wait briefly for initial cards to appear (reduced from 1500ms)
 
 # --- Selectors --- 
 # For the Job List Items (Scrolling & Clicking)
 DETAILS_PANE_TITLE_SELECTOR = ".job-details-jobs-unified-top-card__job-title"
 DETAILS_PANE_COMPANY_SELECTOR = ".job-details-jobs-unified-top-card__company-name a" # Link inside company name
 DETAILS_PANE_LOCATION_SELECTOR = ".job-details-jobs-unified-top-card__primary-description-without-tagline span.job-details-jobs-unified-top-card__bullet" # Location often uses bullets
-DETAILS_PANE_DESCRIPTION_SELECTOR = ".jobs-description-content__text"
+# Job description selectors - multiple options to handle LinkedIn UI variations
+DETAILS_PANE_DESCRIPTION_SELECTOR = ".jobs-description-content__text, .jobs-description-content__text--stretch, #job-details"
 DETAILS_PANE_EASY_APPLY_BUTTON_SELECTOR = 'button.jobs-apply-button span.artdeco-button__text'
 DETAILS_PANE_APPLY_BUTTON_SELECTOR = 'button.jobs-apply-button'
 
 # --- Settings --- 
-POST_CLICK_DELAY_MS = 1000 # Wait after clicking a card for pane to load (reduced from 1500ms)
+POST_CLICK_DELAY_MS = 500 # Wait after clicking a card for pane to load (reduced from 1000ms)
+
+# File paths for previously processed applications
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+SUCCESSFUL_APPLICATIONS_FILE = os.path.join(DATA_DIR, 'successful_applications.json')
+FAILED_APPLICATIONS_FILE = os.path.join(DATA_DIR, 'failed_applications.json')
 
 def extract_job_id_from_url(url: str) -> str | None:
     """Helper to extract job ID from common LinkedIn job URL patterns."""
@@ -84,6 +95,38 @@ def _extract_job_id(card: Locator) -> Optional[str]:
         logger.debug(f"Quick Job ID extraction failed for card: {e}")
     return job_id
 
+def load_previously_processed_jobs():
+    """Load lists of successfully applied and failed applications from JSON files.
+    
+    Returns:
+        A tuple of (successful_job_ids, failed_job_ids) as sets
+    """
+    successful_job_ids = set()
+    failed_job_ids = set()
+    
+    # Ensure data directory exists
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
+    # Load successful applications
+    try:
+        if os.path.exists(SUCCESSFUL_APPLICATIONS_FILE):
+            with open(SUCCESSFUL_APPLICATIONS_FILE, 'r') as f:
+                successful_job_ids = set(json.load(f))
+                logger.info(f"Loaded {len(successful_job_ids)} previously successful applications")
+    except Exception as e:
+        logger.error(f"Error loading successful applications: {e}")
+    
+    # Load failed applications
+    try:
+        if os.path.exists(FAILED_APPLICATIONS_FILE):
+            with open(FAILED_APPLICATIONS_FILE, 'r') as f:
+                failed_job_ids = set(json.load(f))
+                logger.info(f"Loaded {len(failed_job_ids)} previously failed applications")
+    except Exception as e:
+        logger.error(f"Error loading failed applications: {e}")
+    
+    return successful_job_ids, failed_job_ids
+
 def load_all_job_cards(page: Page):
     """Loads job cards via scrolling, then clicks each card to extract details from the main pane.
     
@@ -100,6 +143,11 @@ def load_all_job_cards(page: Page):
     """
     job_data_list: List[Dict[str, str]] = []
     seen_job_ids: Set[str] = set()
+
+    # Load previously processed job IDs
+    successful_job_ids, failed_job_ids = load_previously_processed_jobs()
+    previously_processed_ids = successful_job_ids.union(failed_job_ids)
+    logger.info(f"Total {len(previously_processed_ids)} previously processed applications will be skipped")
 
     logger.info(f"Attempting to force-scroll job cards (increment: {SCROLL_INCREMENT}) up to initial DOM count...")
     page.wait_for_timeout(INITIAL_WAIT_MS) # Allow initial load
@@ -165,6 +213,15 @@ def load_all_job_cards(page: Page):
                     logger.debug(f"  Skipping duplicate Job ID: {job_id}")
                     continue
 
+                # Skip if this job was previously processed (successful or failed)
+                if job_id in previously_processed_ids:
+                    if job_id in successful_job_ids:
+                        logger.info(f"  Skipping previously successful application - Job ID: {job_id}")
+                    else:
+                        logger.info(f"  Skipping previously failed application - Job ID: {job_id}")
+                    processed_count += 1
+                    continue
+                
                 # 2. Click the card to load details pane
                 logger.debug(f"  Card {i+1} (ID: {job_id}): Clicking card...")
                 card.click() # Potential race condition if page refreshes?
@@ -226,17 +283,43 @@ def load_all_job_cards(page: Page):
 
                 # Description (can be long, allow more time)
                 job_description = ""
+                desc_html = ""
+                
                 try:
-                    desc_elem = page.locator(DETAILS_PANE_DESCRIPTION_SELECTOR).first
-                    job_description = desc_elem.inner_text(timeout=EXTRACT_TIMEOUT_MS).strip()
-                    # Try to get the HTML content for better formatting
-                    try:
-                        desc_html = desc_elem.inner_html(timeout=EXTRACT_TIMEOUT_MS)
-                        logger.info(f"Extracted full job description HTML for job ID: {job_id}")
-                    except Exception:
-                        desc_html = ""
+                    # Try multiple selectors to find the job description
+                    # First try the jobs-description container approach (newer UI)
+                    job_desc_container = page.locator('article.jobs-description__container')
+                    if job_desc_container.count() > 0:
+                        try:
+                            # Try to get the complete description HTML
+                            desc_html = job_desc_container.inner_html(timeout=EXTRACT_TIMEOUT_MS * 2)
+                            logger.info(f"Extracted job description HTML using container selector for job ID: {job_id}")
+                            
+                            # Extract text from the HTML
+                            job_description = job_desc_container.inner_text(timeout=EXTRACT_TIMEOUT_MS).strip()
+                        except Exception as container_err:
+                            logger.debug(f"Container approach failed: {container_err}")
+                    
+                    # If we still don't have a description, try the targeted selector approach
+                    if not job_description:
+                        desc_elem = page.locator(DETAILS_PANE_DESCRIPTION_SELECTOR).first
+                        job_description = desc_elem.inner_text(timeout=EXTRACT_TIMEOUT_MS * 2).strip()
+                        
+                        # Try to get the HTML content for better formatting
+                        if not desc_html:
+                            desc_html = desc_elem.inner_html(timeout=EXTRACT_TIMEOUT_MS)
+                            logger.info(f"Extracted job description HTML using fallback selector for job ID: {job_id}")
+                    
+                    # Final fallback - try to get any text from the job details section
+                    if not job_description:
+                        logger.debug("Trying fallback method for job description")
+                        fallback_desc = page.locator('#job-details, .jobs-box__html-content').inner_text(timeout=EXTRACT_TIMEOUT_MS)
+                        if fallback_desc:
+                            job_description = fallback_desc.strip()
+                            desc_html = page.locator('#job-details, .jobs-box__html-content').inner_html(timeout=EXTRACT_TIMEOUT_MS)
+                            logger.info(f"Extracted job description using last-resort fallback for job ID: {job_id}")
                 except Exception as e:
-                    logger.warning(f"Failed to extract job description: {e}")
+                    logger.warning(f"Failed to extract job description for job ID {job_id}: {e}")
                 
                 # 5. Store data
                 job_details = {
@@ -327,11 +410,16 @@ def load_all_job_cards(page: Page):
         if not all_pages_processed:
             # If we successfully navigated to a new page, recursively process that page
             logger.info("Processing jobs on the next page...")
-            page.wait_for_timeout(3000)  # Wait for the new page to load
-            # Add jobs from the next page to our list
-            next_page_jobs = load_all_job_cards(page)
-            job_data_list.extend(next_page_jobs)
-            logger.info(f"Added {len(next_page_jobs)} jobs from next page. Total unique jobs: {len(job_data_list)}")
+            # No need for additional wait here as we've already done it in check_and_navigate_to_next_page
+            
+            # Need to start the extraction process from the beginning again for this new page
+            # Refresh the cards list and process them
+            logger.info("Starting to process cards on new page")
+            return load_all_job_cards(page)  # Return the result directly for the new page processing
+            
+            # We're changing the approach here: instead of extending the list,
+            # we're starting a completely fresh extraction on the new page
+            # This ensures the process restarts properly for each page
 
     except Exception as e_extract_phase:
         logger.error(f"Error during the final extraction phase: {e_extract_phase}")
@@ -350,6 +438,24 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
         bool: True if all pages have been processed (no more pages), False if navigated to a new page.
     """
     try:
+        logger.info("Checking for pagination on current page...")
+        # Ensure we're on the main job search page first, not in an application form
+        try:
+            # Check if we need to go back to search results first
+            back_button = page.locator('button[aria-label="Back to search results"]')
+            if back_button.count() > 0:
+                logger.info("Found 'Back to search results' button - clicking it first")
+                back_button.click()
+                page.wait_for_timeout(3000)  # Wait for page to transition
+                logger.info("Returned to search results page")
+        except Exception as e:
+            logger.info(f"No back button found or error checking: {e}")
+            
+        # Refresh the page to ensure we have fresh content
+        logger.info("Refreshing page to ensure fresh content before pagination check")
+        page.reload()
+        page.wait_for_timeout(5000)  # Give page time to reload completely
+            
         # Check if pagination container exists
         pagination = page.locator(PAGINATION_CONTAINER_SELECTOR)
         if pagination.count() == 0:
@@ -368,16 +474,115 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
             page_text = page_indicator.inner_text()
             logger.info(f"Current pagination: {page_text}")
         
+        # Store the current URL and also the page number for verification
+        current_url = page.url
+        current_page_number = None
+        if page_indicator.count() > 0:
+            try:
+                # Try to extract current page number from text like "Page 1 of 4"
+                page_text = page_indicator.inner_text()
+                match = re.search(r'Page (\d+)', page_text)
+                if match:
+                    current_page_number = int(match.group(1))
+                    logger.info(f"Current page number: {current_page_number}")
+            except Exception as e:
+                logger.warning(f"Failed to extract page number: {e}")
+        
         # Click the Next button
         logger.info("Clicking 'Next' button to navigate to the next page of job results...")
         next_button.click()
         
-        # Wait for navigation and for the job list to reload
-        page.wait_for_selector(JOB_LIST_SELECTOR, timeout=10000)
-        page.wait_for_timeout(2000)  # Additional wait for content to stabilize
+        # Wait for the page to change
+        max_attempts = 5  # Increased from 3 to 5
+        for attempt in range(max_attempts):
+            try:
+                # Wait for URL to change first (indicates navigation started)
+                # We'll use a shorter timeout per attempt but more attempts
+                page.wait_for_url(lambda url: url != current_url, timeout=4000)
+                logger.info("URL changed, checking for job listings...")
+                
+                # Wait for page to stabilize
+                page.wait_for_timeout(4000)
+                
+                # Check if page number has changed if we know the current page number
+                if current_page_number is not None:
+                    new_page_indicator = page.locator(PAGINATION_PAGE_INDICATOR_SELECTOR)
+                    if new_page_indicator.count() > 0:
+                        try:
+                            new_page_text = new_page_indicator.inner_text()
+                            match = re.search(r'Page (\d+)', new_page_text)
+                            if match and int(match.group(1)) > current_page_number:
+                                logger.info(f"Page number increased from {current_page_number} to {match.group(1)}")
+                                # Success - we've confirmed page has changed
+                                page.wait_for_timeout(3000)  # Wait for content to fully load
+                                return False
+                        except Exception as e:
+                            logger.warning(f"Error extracting new page number: {e}")
+                
+                # Now try to find job listings with various selectors
+                selectors = [
+                    JOB_LIST_SELECTOR,
+                    "ul.jobs-search-results__list", 
+                    "div.jobs-search-results-list",
+                    "div.jobs-search-results",
+                    "section.jobs-search-results-list",
+                    "div[data-test-search-results-list]",
+                    "div.jobs-search-two-pane__wrapper"  # Another possible container
+                ]
+                
+                # Try each selector
+                for selector in selectors:
+                    try:
+                        logger.info(f"Waiting for job list selector: {selector}")
+                        # Shorter timeout per selector but we'll try more selectors
+                        element = page.wait_for_selector(selector, timeout=3000, state="visible")
+                        if element:
+                            logger.info(f"Found job list with selector: {selector}")
+                            # Try to verify we have job cards
+                            cards = page.locator(f"{selector} li.jobs-search-results__list-item")
+                            if cards.count() > 0:
+                                logger.info(f"Found {cards.count()} job cards on new page")
+                                page.wait_for_timeout(3000)  # Wait for content to fully load
+                                return False
+                            else:
+                                logger.info("List container found but no job cards yet")
+                    except PlaywrightError:
+                        # Try next selector
+                        continue
+                
+                # If we've tried all selectors without success, reload and try again
+                if attempt < max_attempts - 1:  # Don't reload on last attempt
+                    logger.warning(f"Attempt {attempt+1}/{max_attempts}: No job list found with any selector. Reloading page...")
+                    page.reload()
+                    page.wait_for_timeout(5000)  # Give more time after reload
+                else:
+                    # On last attempt, just wait longer before giving up
+                    logger.warning(f"Attempt {attempt+1}/{max_attempts}: No job list found with any selector. Waiting longer...")
+                    page.wait_for_timeout(8000)  # Wait longer on last attempt
+            except PlaywrightError as e:
+                logger.warning(f"Attempt {attempt+1}/{max_attempts}: Navigation issue: {e}")
+                if attempt < max_attempts - 1:  # Don't reload on last attempt
+                    logger.info("Reloading page after navigation issue")
+                    try:
+                        page.reload()
+                        page.wait_for_timeout(5000)
+                    except Exception as reload_error:
+                        logger.warning(f"Error during reload: {reload_error}")
         
-        # Successfully navigated to next page
-        return False
+        # One last attempt to find at least something on the page
+        try:
+            # See if we can find ANY jobs section
+            any_job_section = page.locator('section.jobs-search-results').first
+            if any_job_section:
+                logger.info("Found a job section on the page after multiple attempts")
+                page.wait_for_timeout(3000)  # Wait for content to fully load
+                return False
+        except Exception:
+            pass
+            
+        # If we got here, we couldn't confirm successful navigation
+        logger.error("Could not verify successful navigation to next page after multiple attempts")
+        return True
         
     except PlaywrightError as e:
         logger.error(f"Error navigating to next page: {e}")

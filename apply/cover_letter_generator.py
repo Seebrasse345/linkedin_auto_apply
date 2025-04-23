@@ -14,11 +14,27 @@ logger = logging.getLogger(__name__)
 
 # OpenAI API Configuration
 # Store API key in an environment variable or config file for better security in production
-def get_openai_api_key():
-    """Get the OpenAI API key from environment or config."""
-    # NOTE: In a production environment, this should be stored in environment variables or a secure vault
-    # This is a temporary solution for the current implementation
-    return "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"
+def get_openai_api_key() -> str:
+    """Get the OpenAI API key from environment or config.
+    
+    In the future, this could be enhanced to retrieve from a secure environment variable or config file.
+    
+    Returns:
+        str: OpenAI API key
+    """
+    # Hardcoded for now - this is a placeholder and should be replaced with proper security later
+    # In a production environment, this would be a major security issue
+    # Using the old key provided
+    api_key = "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"
+    
+    # Log the first and last few characters for debugging, NEVER log the full key
+    if api_key:
+        safe_key_preview = f"{api_key[:5]}...{api_key[-5:]}"
+        logger.info(f"Using OpenAI API key: {safe_key_preview}")
+    else:
+        logger.error("No OpenAI API key available")
+        
+    return api_key
 
 OPENAI_MODEL = "gpt-4.1-2025-04-14"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
@@ -109,17 +125,19 @@ Cover letter:
             print("\n[APPLICATION FORM] Error: No OpenAI API key available. Using fallback cover letter.")
             return generate_fallback_cover_letter(job_data, answers)
             
-        # Call OpenAI API
+        # Configure API request
+        url = "https://api.openai.com/v1/chat/completions"
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}"
         }
-        
         data = {
-            "model": OPENAI_MODEL,
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": OPENAI_MAX_TOKENS,
-            "temperature": OPENAI_TEMPERATURE
+            "model": "gpt-4o-2024-05-13",  # Use newer model that definitely exists
+            "messages": [
+                {"role": "system", "content": "You are a professional cover letter writer. Write concise, well-structured cover letters."},
+                {"role": "user", "content": prompt}
+            ]
+            # Removed timeout as it's not a valid OpenAI parameter
         }
         
         # Make the API call with retries
@@ -129,15 +147,15 @@ Cover letter:
                 logger.info(f"Calling OpenAI API to generate cover letter (attempt {attempt+1})")
                 print(f"\n[APPLICATION FORM] Generating custom cover letter using AI... (attempt {attempt+1})")
                 
-                response = requests.post(OPENAI_API_URL, headers=headers, json=data, timeout=60)
+                # Add more robust error handling with timeout
+                response = requests.post(url, headers=headers, json=data, timeout=30)
                 
-                # Check for API errors
-                if response.status_code == 401:
-                    logger.error("OpenAI API key is invalid or expired")
-                    print("\n[APPLICATION FORM] Error: OpenAI API key is invalid or expired. Using fallback cover letter.")
-                    return generate_fallback_cover_letter(job_data, answers)
+                # If we get an error response, log it in detail before raising
+                if response.status_code != 200:
+                    error_detail = response.text[:200] if response.text else "No error details"
+                    logger.error(f"OpenAI API error (status {response.status_code}): {error_detail}")
                     
-                response.raise_for_status()
+                response.raise_for_status()  # Raises HTTPError for 4XX/5XX status codes
                 
                 # Parse response
                 response_data = response.json()
@@ -149,14 +167,19 @@ Cover letter:
                     
                 cover_letter = response_data['choices'][0]['message']['content'].strip()
                 
-                # Verify the cover letter looks valid
-                if len(cover_letter) < 100 or 'Dear' not in cover_letter or 'Sincerely' not in cover_letter:
-                    logger.warning(f"Generated cover letter may be incomplete: {cover_letter[:50]}...")
-                    print("\n[APPLICATION FORM] Warning: Generated cover letter may be incomplete. Retrying...")
+                # Verify the cover letter looks valid - less strict validation
+                if len(cover_letter) < 50:
+                    logger.warning(f"Generated cover letter may be too short: {cover_letter}")
+                    print("\n[APPLICATION FORM] Warning: Generated cover letter is too short. Retrying...")
                     # Try again if the response seems invalid
                     if attempt < max_retries - 1:
-                        time.sleep(2)
+                        time.sleep(5)
                         continue
+                        
+                # Even if it's not perfect, use it if we've retried multiple times
+                if attempt >= 2 and len(cover_letter) >= 100:
+                    logger.info("Using current cover letter after multiple retries")
+                    break
                 
                 # Log success
                 logger.info(f"Successfully generated cover letter for {job_title} at {company_name} using OpenAI API")

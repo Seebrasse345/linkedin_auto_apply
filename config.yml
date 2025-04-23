@@ -3,7 +3,7 @@ credentials:
   password: Bakumonsuno45! # Replace with your actual password or use ENC() later
 search_profiles:
   - name: graduate-data-uk
-    query: "Data"
+    query: "Junior"
     location: "United Kingdom"
     # Add geoId - Find the correct one for your target location(s)
     # Example for UK: 101165590, Sheffield: 104470941

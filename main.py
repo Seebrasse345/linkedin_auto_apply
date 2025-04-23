@@ -21,6 +21,7 @@ logging.basicConfig(level=log_level_str, format='%(asctime)s - %(name)s - %(leve
 logger = logging.getLogger(__name__)
 
 
+
 # Define selectors for search results verification
 JOB_LIST_SELECTOR = 'ul.jobs-search-results__list, div.jobs-search-results-list' # Prioritize list, fallback div
 

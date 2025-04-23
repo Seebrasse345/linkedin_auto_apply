@@ -140,7 +140,10 @@ def get_answer_for_field(answers: Dict[str, Any], field_label: str) -> Optional[
         str: The stored answer if found, None otherwise
     """
     # Special case: Auto-fill years of experience fields with "2"
-    if field_label.lower().startswith("how many years of work experience"):
+    field_lower = field_label.lower()
+    # Match various forms of years of experience questions
+    if ('years of experience' in field_lower or 'years of work experience' in field_lower) and \
+       ('how many' in field_lower or field_lower.startswith('years of')):
         logger.info(f"Auto-filling years of experience field: '{field_label}' with '2'")
         # Save this answer for future use
         answers[field_label] = "2"
