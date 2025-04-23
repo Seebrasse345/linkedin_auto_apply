@@ -8,6 +8,7 @@ from pathlib import Path # Added for ROOT_PATH calculation
 # Adjust imports based on your final structure if different
 from browser.context import load_config, get_authenticated_page
 from joblist.search import construct_search_url
+from joblist.scroll_loader import load_all_job_cards # Import the new function
 
 # Define root path relative to this file (main.py)
 ROOT_PATH = Path(__file__).parent.parent
@@ -22,40 +23,65 @@ logger = logging.getLogger(__name__)
 # Define selectors for search results verification
 JOB_LIST_SELECTOR = 'ul.jobs-search-results__list, div.jobs-search-results-list' # Prioritize list, fallback div
 
+
+# Import List and Dict for type hinting
+from typing import List, Dict
+
+
 def run_profile_search(page: Page, profile: dict, config: dict):
-    """Constructs URL and navigates to the search results page for a profile."""
+    """Constructs URL, navigates, scrolls, and extracts job data."""
     profile_name = profile.get('name', 'Unnamed Profile')
     logger.info(f"--- Starting search for profile: {profile_name} ---")
-    headless = config.get('runtime', {}).get('headless', True)
+    # headless = config.get('runtime', {}).get('headless', True) # Not directly used here
     try:
         search_url = construct_search_url(profile)
         logger.info(f"Navigating to search URL: {search_url}")
-        page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
-        logger.info(f"Navigation complete for profile '{profile_name}'. Current URL: {page.url}")
+        page.goto(search_url, wait_until='load', timeout=60000)
+        logger.info(f"Base navigation complete for '{profile_name}'. Waiting briefly...")
+        page.wait_for_timeout(5000)
+        logger.info(f"Waited after navigation. Current URL: {page.url}")
 
-        # Verify search results page loaded (check for job list container)
+        # --- Scroll and Extract Job Data ---
+        logger.info(f"Attempting to scroll and load job cards for profile '{profile_name}'...")
         try:
-             logger.info(f"Verifying job list container is visible ({JOB_LIST_SELECTOR})...")
-             page.locator(JOB_LIST_SELECTOR).first.wait_for(state="visible", timeout=15000)
-             logger.info(f"SUCCESS: Job search results page verified for profile '{profile_name}'.")
+            if not page.context or not page.context.browser or not page.context.browser.is_connected():
+                 logger.error(f"Browser disconnected before scrolling for '{profile_name}'.")
+                 return False # Treat as profile failure
 
-             # Add a small pause for visibility during non-headless runs
-             if not headless:
-                pause_duration = 5 # seconds
-                logger.debug(f"Running in non-headless mode. Pausing for {pause_duration} seconds...")
-                time.sleep(pause_duration)
+            # Load job cards using the refined function
+            logger.info(f"Attempting to scroll and load job cards for profile '{profile_name}'...")
+            job_data_list: List[Dict[str, str]] = load_all_job_cards(
+                page=page # Only pass the page object now
+            )
 
-        except PlaywrightTimeoutError:
-             logger.error(f"FAILED: Could not verify job list container ({JOB_LIST_SELECTOR}) after navigation for profile '{profile_name}'.")
-             # Optionally, save screenshot: page.screenshot(path=ROOT_PATH / f"search_verify_fail_{profile_name}.png")
-             # Continue to the next profile despite verification failure
+            if not job_data_list:
+                logger.warning(f"No job data extracted for profile '{profile_name}'. Skipping.")
+            else:
+                job_count = len(job_data_list) # Get count from the returned list
 
-        # --- Placeholder for next steps --- TODO: Integrate scrolling and card iteration
-        logger.info(f"Placeholder: Scrolling and card iteration for profile '{profile_name}' would happen here.")
-        # result = joblist.scroll_loader.load_all_cards(page)
-        # if result:
-        #    FOR card in joblist.card_iterator.cards(page, profile): ...
-        # --- End Placeholder ---
+                if job_count > 0:
+                     logger.info(f"SUCCESS: Found {job_count} unique job cards after scrolling for profile '{profile_name}'.")
+                     # --- Print Extracted Job Details ---
+                     logger.info(f"--- Job Details for Profile: {profile_name} ---")
+                     for i, job in enumerate(job_data_list):
+                         print(f"  Job {i+1}:")
+                         print(f"    Title: {job.get('title', 'N/A')}")
+                         print(f"    Company: {job.get('company', 'N/A')}")
+                         print(f"    Link: {job.get('link', '#')}")
+                         # print(f"    ID: {job.get('job_id', 'N/A')}") # Optional: print ID
+                         print("-" * 20)
+                     logger.info(f"--- End Job Details for Profile: {profile_name} ---")
+                     # --- Placeholder for next steps (e.g., applying) ---
+                     # You would now iterate through job_data_list for application logic
+                else:
+                     # *** MODIFIED: Updated warning message ***
+                     logger.warning(f"No unique job cards extracted after scrolling for profile '{profile_name}'. The page might be empty, selectors might need adjustment, or scrolling parameters might need tuning.")
+                     # Screenshot logic remains the same if needed
+
+        except Exception as scroll_err:
+             logger.error(f"FAILED: Error during job card scrolling/loading for profile '{profile_name}': {scroll_err}", exc_info=True)
+             return False # Treat scrolling failure as profile failure
+
         logger.info(f"--- Finished processing profile: {profile_name} ---")
         return True # Indicate success for this profile
 
@@ -63,11 +89,14 @@ def run_profile_search(page: Page, profile: dict, config: dict):
          logger.error(f"FAILED: Could not construct search URL for profile '{profile_name}': {e}")
          return False
     except PlaywrightTimeoutError as e:
-         logger.error(f"FAILED: Timeout during navigation or verification for profile '{profile_name}': {e}")
-         # Optionally, save screenshot: page.screenshot(path=ROOT_PATH / f"search_nav_fail_{profile_name}.png")
+         logger.error(f"FAILED: Timeout during navigation or initial load for profile '{profile_name}': {e}")
          return False
     except Exception as e:
-        logger.error(f"FAILED: An unexpected error occurred during search for profile '{profile_name}': {e}", exc_info=True)
+        # Catch browser closed errors specifically if they happen here
+        if "Target page, context or browser has been closed" in str(e):
+             logger.error(f"FAILED: Browser closed unexpectedly during setup for profile '{profile_name}': {e}")
+        else:
+            logger.error(f"FAILED: An unexpected error occurred during search setup for profile '{profile_name}': {e}", exc_info=True)
         return False
 
 def main():
