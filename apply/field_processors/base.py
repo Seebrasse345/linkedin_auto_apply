@@ -11,6 +11,10 @@ logger = logging.getLogger(__name__)
 class FieldProcessor(ABC):
     """Base class for field processors."""
     
+    def __init__(self):
+        """Initialize the field processor."""
+        self.job_data = {}
+    
     @abstractmethod
     def process(self, field_element: Locator, answers: Dict[str, Any]) -> bool:
         """Process a form field element.

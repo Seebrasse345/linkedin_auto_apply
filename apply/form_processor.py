@@ -22,15 +22,17 @@ logger = logging.getLogger(__name__)
 class FormProcessor:
     """Processes LinkedIn job application forms by handling different field types."""
     
-    def __init__(self, page: Page, answers: Dict[str, Any]):
+    def __init__(self, page: Page, answers: Dict[str, Any], job_data: Dict[str, Any] = None):
         """Initialize the form processor.
         
         Args:
             page: Playwright page
             answers: Dictionary of stored answers
+            job_data: Dictionary containing job details for cover letter generation
         """
         self.page = page
         self.answers = answers
+        self.job_data = job_data or {}
         
         # Initialize field processors
         self.text_processor = TextInputProcessor()
@@ -40,6 +42,13 @@ class FormProcessor:
         self.radio_group_processor = RadioGroupProcessor(page)
         self.checkbox_processor = CheckboxProcessor()
         self.resume_processor = ResumeProcessor()
+        
+        # Pass job data to field processors that need it
+        self.text_processor.job_data = self.job_data
+        self.textarea_processor.job_data = self.job_data
+        
+        # Log job data for debugging
+        logger.info(f"Initialized form processor with job data: {self.job_data.get('job_id', 'Unknown ID')} - {self.job_data.get('title', 'Unknown Title')} at {self.job_data.get('company', 'Unknown Company')}")
     
     def process_form_fields(self) -> bool:
         """Process all form fields on the current step.

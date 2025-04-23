@@ -172,8 +172,11 @@ class ApplicationWizard:
                     duplicate_form_count = 0
                     previous_form_content = current_form_content
 
+                # Store the current job data in answers for use in cover letter generation
+                self.answers['current_job_data'] = job_data
+                
                 # Process form fields on current step
-                form_processor = FormProcessor(self.page, self.answers)
+                form_processor = FormProcessor(self.page, self.answers, job_data)
                 form_success = form_processor.process_form_fields()
                 
                 # Save answers immediately after processing each form

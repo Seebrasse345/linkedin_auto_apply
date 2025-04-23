@@ -399,7 +399,7 @@ class RadioGroupProcessor(FieldProcessor):
                 
             # Always ask for user input on every radio question without a stored answer
             # Never auto-select options (per user request)
-            if not answer:
+            if not answer or answer is None:
                 # Show options to user
                 print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
                 for i, option in enumerate(options):
@@ -447,14 +447,10 @@ class RadioGroupProcessor(FieldProcessor):
                             print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
                     except (ValueError, KeyboardInterrupt):
                         logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. No option selected.")
-                # Last resort attempt if all else fails
-                try:
-                    option_elements[0].evaluate("el => el.click()")
-                    logger.info(f"Selected first radio option '{options[0]}' (via JS) for '{field_label}'")
-                    return True
-                except PlaywrightError as js_e:
-                    logger.error(f"JS click also failed: {js_e}")
-                    return False
+                        # Never auto-select options when no stored answer matches or user doesn't select anything
+                        logger.warning(f"No selection made for radio field '{field_label}' - user input required")
+                        print(f"\n[APPLICATION FORM] No selection made for '{field_label}'. The field will remain unselected.")
+                        return False
             
             # If there is a stored answer, try to find and click the matching option
             else:
@@ -509,7 +505,7 @@ class RadioGroupProcessor(FieldProcessor):
                                     from ..helpers import save_answers
                                     import os
                                     
-                                    # Get answers file path from the ApplicationWizard context
+                                    # Get answers file path directly
                                     answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
                                     save_answers(answers_file, answers)
                                     logger.info(f"Saved new answer for '{field_label}' immediately to disk")
@@ -539,14 +535,12 @@ class RadioGroupProcessor(FieldProcessor):
                         except (ValueError, KeyboardInterrupt):
                             logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. No option selected.")
                 
-                # Last resort attempt if all else fails
-                try:
-                    option_elements[0].evaluate("el => el.click()")
-                    logger.info(f"Selected first radio option '{options[0]}' (via JS) for '{field_label}'")
-                    return True
-                except PlaywrightError as js_e:
-                    logger.error(f"JS click also failed: {js_e}")
+                # Only indicate no selection if we truly haven't made a selection
+                if not selected:
+                    logger.warning(f"No selection made for radio field '{field_label}' - user input required")
+                    print(f"\n[APPLICATION FORM] No selection made for '{field_label}'. The field will remain unselected.")
                     return False
+                return True
         
         except Exception as e:
             logger.error(f"Unexpected error processing radio group '{field_label}': {e}")

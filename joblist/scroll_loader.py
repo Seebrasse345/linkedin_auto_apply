@@ -225,11 +225,18 @@ def load_all_job_cards(page: Page):
                         logger.debug(f"  Card {i+1}: Apply button check failed.")
 
                 # Description (can be long, allow more time)
+                job_description = ""
                 try:
                     desc_elem = page.locator(DETAILS_PANE_DESCRIPTION_SELECTOR).first
                     job_description = desc_elem.inner_text(timeout=EXTRACT_TIMEOUT_MS).strip()
+                    # Try to get the HTML content for better formatting
+                    try:
+                        desc_html = desc_elem.inner_html(timeout=EXTRACT_TIMEOUT_MS)
+                        logger.info(f"Extracted full job description HTML for job ID: {job_id}")
+                    except Exception:
+                        desc_html = ""
                 except Exception as e:
-                    pass # Suppress warning as requested
+                    logger.warning(f"Failed to extract job description: {e}")
                 
                 # 5. Store data
                 job_details = {
@@ -240,7 +247,8 @@ def load_all_job_cards(page: Page):
                     'posted_date': 'N/A', # Not easily available in details pane usually
                     'url': job_url, # URL when detail pane is visible
                     'easy_apply': is_easy_apply,
-                    'description': job_description[:200] + '...' if len(job_description) > 200 else job_description # Truncate description
+                    'description': job_description, # Store the full job description
+                    'description_html': desc_html if 'desc_html' in locals() else ""
                 }
                 
                 logger.info(

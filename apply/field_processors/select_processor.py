@@ -95,7 +95,7 @@ class SelectProcessor(FieldProcessor):
                     from ..helpers import save_answers
                     import os
                     
-                    # Get answers file path from the ApplicationWizard context
+                    # Get answers file path directly
                     answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
                     save_answers(answers_file, answers)
                     logger.info(f"Saved new answer for '{field_label}' immediately to disk")
@@ -158,7 +158,7 @@ class SelectProcessor(FieldProcessor):
                                 from ..helpers import save_answers
                                 import os
                                 
-                                # Get answers file path from the ApplicationWizard context
+                                # Get answers file path directly
                                 answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
                                 save_answers(answers_file, answers)
                                 logger.info(f"Saved new answer for '{field_label}' immediately to disk")

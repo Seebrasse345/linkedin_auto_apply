@@ -125,9 +125,12 @@ def get_auto_answer(field_label: str, options: List[str]) -> str:
 def get_answer_for_field(answers: Dict[str, Any], field_label: str) -> Optional[str]:
     """Get the answer for a field from the answers dictionary.
     
-    ONLY use EXACT MATCHING to prevent auto-filling fields without explicit stored answers.
-    This function will ONLY return an answer if there is an EXACT match in the answers dictionary,
-    either with exact case or case-insensitive comparison.
+    ONLY use EXACT MATCHING to prevent auto-filling fields without explicit stored answers,
+    with one exception: fields about years of experience are automatically filled with "2".
+    
+    This function will ONLY return an answer if:
+    1. There is an EXACT match in the answers dictionary (exact case or case-insensitive)
+    2. The field is about years of experience (starts with "How many years of work experience")
     
     Args:
         answers: Dictionary of stored answers
@@ -136,6 +139,13 @@ def get_answer_for_field(answers: Dict[str, Any], field_label: str) -> Optional[
     Returns:
         str: The stored answer if found, None otherwise
     """
+    # Special case: Auto-fill years of experience fields with "2"
+    if field_label.lower().startswith("how many years of work experience"):
+        logger.info(f"Auto-filling years of experience field: '{field_label}' with '2'")
+        # Save this answer for future use
+        answers[field_label] = "2"
+        return "2"
+    
     # Try exact match first
     if field_label in answers:
         return answers[field_label]

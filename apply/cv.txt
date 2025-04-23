@@ -1,0 +1,100 @@
+NAME: Matthaios Markatis
+TAGLINE: Data Scientist | ML Engineer | Full Stack Developer
+EMAIL: matthaiosmarkatis@gmail.com
+PHONE: 07480 699246
+LOCATION: 123 Ash Crescent, Eckington S21 4AD
+LINKEDIN: matthaios-markatis
+GITHUB: Seebrasse345
+
+ABOUT ME
+BSc Physics graduate from the University of Sheffield with a robust foundation in computational methods and data analysis. Recently completed the IBM Data Science and IBM AI Engineering Professional Certificates, demonstrating advanced competencies in machine learning, deep learning architectures, and AI system deployment. Proficient in developing end-to-end data pipelines, predictive models, and software solutions integrating AI capabilities, including an IoT-based wildfire detection system with machine learning predictive analytics and a personalized AI image generation mobile app. Extensive experience in AI application development, cloud integration, and full-stack implementation. Seeking opportunities to drive technological innovation through data science, software engineering, and applied AI solutions in professional environments.
+
+TECHNICAL SKILLS
+
+Programming & Development
+- Python (NumPy, Pandas, Scikit-learn, OpenCV)
+- JavaScript/TypeScript (React, Node.js, Express)
+- SQL/NoSQL (PostgreSQL, MongoDB, Firebase)
+- C/C++, Git, CI/CD, REST API development
+
+Machine Learning & AI
+- TensorFlow, PyTorch, Keras, scikit-learn ecosystems
+- Neural networks (CNN, RNN, Transformers)
+- LLM fine-tuning, prompt engineering, GPT models
+- Computer vision, NLP, recommendation systems
+
+Data Science & Engineering
+- Statistical analysis, hypothesis testing, A/B testing
+- ETL pipelines, data preprocessing, feature engineering
+- Visualization (Matplotlib, Seaborn, Plotly, Tableau)
+- ML model deployment, monitoring, and optimization
+
+Web, Cloud & Tools
+- Flask, React, Next.js, Firebase, OAuth
+- Cloud services (AWS, GCP fundamentals)
+- Docker, Jupyter, IBM Watson Studio, Azure ML
+- Mobile app development (Flutter, Dart)
+
+EDUCATION & CERTIFICATIONS
+
+BSc Physics | University of Sheffield | 2020 – 2024 | 2:1 Classification (Upper Second-Class Honours)
+
+Programming & Technical Modules
+- Advanced Programming in Python (82%)
+- Programming in Python (78%)
+- Physical Computing (70%)
+
+Physics Core Modules
+- Physics of Materials (75%)
+- Atomic and Laser Physics (69%)
+- Particle Physics (67%)
+
+IBM AI Engineering Professional Certificate | Coursera | August 2024
+Comprehensive program covering machine learning, deep learning, and AI engineering with hands-on projects. Deployed a traffic light identification system with 98% accuracy using IBM Watson and TensorFlow.
+
+IBM Data Science Professional Certificate | Coursera | July 2024
+Intensive data science program covering the complete workflow from data collection to insights delivery. Developed a SpaceX Falcon landing prediction classifier achieving 80% accuracy through statistical analysis and feature engineering.
+
+PROJECTS
+
+Wildfire Detection System | University of Sheffield Research Project | 2024
+- Developed a real-time fire detection system using ML models (Random Forest, Decision Trees) to analyze environmental data from IoT sensors.
+- Built responsive web dashboard with Flask, SQLite, and Leaflet.js for interactive mapping.
+- Trained on NASA FIRMS data, achieving 86% detection accuracy and 10-minute early warning capability.
+
+AI Personal Image Generation App | Flutter Mobile Application | 2024
+- Created and launched a production-ready Flutter app for personalized AI image generation.
+- Implemented full-stack solution with custom fine-tuning pipeline for FLUX.1 diffusion models via Replicate API.
+- Integrated secure user authentication (OAuth), database management (Firebase), and payment processing (Stripe).
+- Published to Google Play Store with ongoing user adoption.
+
+LinkedIn Job Application Automator | Web Automation Project | 2024
+- Engineered an intelligent automation system using Python and Playwright to handle the entire LinkedIn job application process.
+- Integrated OpenAI API for dynamic cover letter generation, implemented pattern recognition for form detection, and built robust error handling for seamless operation.
+- System capable of submitting 400+ targeted applications daily.
+
+Custom LLM Discord Bot | AI Integration Project | 2024
+- Built versatile Discord bot with locally-hosted LLM integration through an OpenAI-compatible API interface.
+- Developed context-aware prompting system, advanced audio processing pipeline with Coqui TTS, and comprehensive server management tools.
+- Gained adoption across 20+ servers after publication to bot marketplace.
+
+Autonomous FPV Drone with Navigation Software | Personal Project | 2024
+- Designed and built a fully autonomous drone with software for GPS waypoint navigation and stabilization.
+- Implemented sensor fusion algorithms for reliable positioning and custom firmware configuration.
+- Achieved autonomous flight capabilities with precise navigation within a 1-2 km range and automated return-to-base functionality.
+
+WORK EXPERIENCE
+
+AI Data Annotator & Reasoning Specialist | Outlier AI | June 2025 – Present
+- Spearheading data annotation and synthetic task creation for training large language models (LLMs) using Reinforcement Learning from Human Feedback (RLHF).
+- Specialize in annotating and engineering tasks designed to teach models graduate-level mathematics and logical reasoning.
+- Collaborate on fine-tuning initiatives for state-of-the-art reasoning agents with focus on structured task generation, error identification, and model behavior analysis in multi-hop reasoning environments.
+
+Team Leader | Meltdown-Wetherspoons | February 2022 – November 2024
+- Led operations and staff training in high-volume venues.
+- Optimized workflow processes, improving operational efficiency by 15%.
+- Developed crisis management strategies and provided performance coaching to team members in fast-paced environments.
+
+NHS Shadowing Experience | Sheffield Teaching Hospitals NHS Trust | February 2019 – March 2019
+- Observed healthcare technology systems and electronic patient records management across various departments.
+- Gained insight into medical data integration, diagnostic imaging workflows, and cross-departmental information systems.
