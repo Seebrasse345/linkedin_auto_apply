@@ -24,7 +24,30 @@ class SelectProcessor(FieldProcessor):
             bool: True if processing succeeded, False otherwise
         """
         field_label = self.get_field_label(select_element)
-        answer = get_answer_for_field(answers, field_label)
+        
+        # Define critical question keywords that ALWAYS require user input
+        critical_keywords = ['legal', 'authorization', 'authorisation', 'visa', 'sponsor', 'citizen', 'work', 'right']
+        
+        # Check if this is a critical question that requires explicit user input
+        is_critical_question = any(keyword in field_label.lower() for keyword in critical_keywords)
+        
+        # Get stored answer using strict matching only
+        answer = None
+        if field_label in answers:
+            answer = answers[field_label]
+            logger.info(f"Found exact stored answer for '{field_label}'")
+        else:
+            # Try case-insensitive match as fallback
+            for key, value in answers.items():
+                if key.lower() == field_label.lower():
+                    answer = value
+                    logger.info(f"Found case-insensitive stored answer for '{field_label}'")
+                    break
+        
+        # For critical questions, ALWAYS prompt the user regardless of stored answers
+        if is_critical_question:
+            logger.info(f"CRITICAL QUESTION DETECTED: '{field_label}' - will always prompt user")
+            answer = None  # Force user input for critical questions
         
         try:
             # Get available options
@@ -38,10 +61,16 @@ class SelectProcessor(FieldProcessor):
                 logger.warning(f"No options found for select '{field_label}'")
                 return False
             
-            # Always ask for dropdown fields that are important qualifications
-            if not answer or 'experience' in field_label.lower() or 'qualification' in field_label.lower() or 'degree' in field_label.lower() or 'education' in field_label.lower() or 'skill' in field_label.lower():
+            # Prompt user if: 
+            # 1. No stored answer exists, OR
+            # 2. Stored answer doesn't match available options, OR
+            # 3. This is a critical question (work authorization, etc.)
+            if not answer or answer not in options or is_critical_question:
                 # Show options to user
                 print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
+                if answer and answer not in options:
+                    print(f"Your stored answer '{answer}' doesn't match any available option.")
+                
                 for i, option in enumerate(options):
                     print(f"{i+1}. {option}")
                 
@@ -73,14 +102,17 @@ class SelectProcessor(FieldProcessor):
                 except Exception as e:
                     logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
             
-            # Try to select by value or label
-            if answer in options:
+            # If we have a stored answer that exactly matches an option, select it
+            # Note: At this point we've already filtered out critical questions
+            if answer and answer in options:
                 select_element.select_option(label=answer)
-                logger.info(f"Selected option '{answer}' for '{field_label}'")
+                logger.info(f"Selected verified stored option '{answer}' for '{field_label}'")
                 return True
-            else:
-                # If we don't have an exact match, ask the user to select instead of guessing
-                print(f"\n[APPLICATION FORM] No exact match found for '{answer}'. Please select an option for: {field_label}")
+            # If we have a stored answer but it doesn't match exactly, ask the user
+            elif answer:
+                # Show stored answer but ask for confirmation
+                print(f"\n[APPLICATION FORM] Your stored answer '{answer}' doesn't match available options for: {field_label}")
+                print("Available options:")
                 for i, option in enumerate(options):
                     print(f"{i+1}. {option}")
                 
@@ -94,6 +126,45 @@ class SelectProcessor(FieldProcessor):
                             selected_option = options[index]
                             # Update the saved answer for future use
                             answers[field_label] = selected_option
+                            break
+                        else:
+                            print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
+                    except (ValueError, KeyboardInterrupt):
+                        print("Please enter a valid number.")
+                
+                select_element.select_option(label=selected_option)
+                logger.info(f"Selected user-chosen option '{selected_option}' for '{field_label}'")
+                return True
+            # No stored answer case - prompt user for input
+            else:
+                # Show options to user
+                print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
+                for i, option in enumerate(options):
+                    print(f"{i+1}. {option}")
+                
+                # Robust input handling with retry
+                selected_option = ""
+                while True:
+                    try:
+                        selection = input(f"Enter option number (1-{len(options)}): ")
+                        index = int(selection) - 1
+                        if 0 <= index < len(options):
+                            selected_option = options[index]
+                            # Save the new answer for future use
+                            answers[field_label] = selected_option
+                            
+                            # Immediately save to disk
+                            try:
+                                from ..helpers import save_answers
+                                import os
+                                
+                                # Get answers file path from the ApplicationWizard context
+                                answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
+                                save_answers(answers_file, answers)
+                                logger.info(f"Saved new answer for '{field_label}' immediately to disk")
+                            except Exception as e:
+                                logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
+                                
                             break
                         else:
                             print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")

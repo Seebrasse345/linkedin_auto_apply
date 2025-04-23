@@ -340,19 +340,27 @@ class RadioGroupProcessor(FieldProcessor):
         option_elements = []
         option_labels = []
         
-        try:
-            # Handle both locator arrays and regular python lists
+        # Define helper function for radio count determination with proper error handling
+        def get_radio_count(rg):
             try:
-                if hasattr(radio_group, 'count'):
-                    radio_count = radio_group.count()
-                elif isinstance(radio_group, list):
-                    radio_count = len(radio_group)
+                if hasattr(rg, 'count'):
+                    return rg.count()
+                elif isinstance(rg, list):
+                    return len(rg)
                 else:
-                    # Try to convert to list
-                    radio_count = len(list(radio_group))
+                    # Try to convert to list as a last resort
+                    try:
+                        return len(list(rg))
+                    except Exception:
+                        logger.error(f"Could not convert radio_group to list")
+                        return 0
             except Exception as e:
                 logger.error(f"Error getting radio count: {e}")
-                radio_count = 0
+                return 0
+        
+        try:
+            # Use our helper function to get radio count with proper error handling
+            radio_count = get_radio_count(radio_group)
             
             # Extract options and elements
             for i in range(radio_count):
@@ -389,143 +397,161 @@ class RadioGroupProcessor(FieldProcessor):
                 logger.warning(f"No valid options found for radio group '{field_label}' - skipping")
                 return True
                 
-            # Always prompt the user for radio button groups, no auto-answers
-            if not answer or field_label == 'Are you comfortable commuting to this job\'s location?\nAre you comfortable commuting to this job\'s location?' or 'background check' in field_label.lower() or 'commut' in field_label.lower():
+            # Always ask for user input on every radio question without a stored answer
+            # Never auto-select options (per user request)
+            if not answer:
                 # Show options to user
                 print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
                 for i, option in enumerate(options):
                     print(f"{i+1}. {option}")
                 
-                try:
-                    selection = input(f"Enter option number (1-{len(options)}): ")
-                    index = int(selection) - 1
-                    if 0 <= index < len(options):
-                        answer = options[index]
-                    else:
-                        logger.warning(f"Invalid selection index {index+1} for '{field_label}'. Please select 1-{len(options)}.")
-                        # Loop until valid input is received
-                        while True:
+                # Robust input handling with retry
+                while True:
+                    try:
+                        selection = input(f"Enter option number (1-{len(options)}): ")
+                        index = int(selection) - 1
+                        if 0 <= index < len(options):
+                            # Save the selected answer for future use
+                            answers[field_label] = options[index]
+                            
+                            # Immediately save to disk
                             try:
-                                selection = input(f"Please enter a valid option number (1-{len(options)}): ")
-                                index = int(selection) - 1
-                                if 0 <= index < len(options):
-                                    answer = options[index]
-                                    break
-                            except (ValueError, KeyboardInterrupt):
-                                pass
-                except (ValueError, KeyboardInterrupt):
-                    logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. Asking again.")
-                    # Loop until valid input is received
-                    while True:
-                        try:
-                            selection = input(f"Please enter a valid option number (1-{len(options)}): ")
-                            index = int(selection) - 1
-                            if 0 <= index < len(options):
-                                answer = options[index]
-                                break
-                        except (ValueError, KeyboardInterrupt):
-                            pass
-                
-                # Save this answer for future use
-                answers[field_label] = answer
-                
-                # Immediately save to disk
-                try:
-                    from ..helpers import save_answers
-                    import os
-                    
-                    # Get answers file path from the ApplicationWizard context
-                    answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
-                    save_answers(answers_file, answers)
-                    logger.info(f"Saved new answer for '{field_label}' immediately to disk")
-                except Exception as e:
-                    logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
-            
-            # Find and click the matching option
-            return self._click_matching_option(field_label, options, option_elements, option_labels, answer)
-            
-        except PlaywrightError as e:
-            logger.error(f"Error processing radio group '{field_label}': {e}")
-            return False
-            
-    def _click_matching_option(self, field_label: str, options: List[str], 
-                              option_elements: List[Locator], option_labels: List[Optional[Locator]], 
-                              answer: str) -> bool:
-        """Click the matching radio option.
-        
-        Args:
-            field_label: The label for the radio group
-            options: List of option text values
-            option_elements: List of radio button elements
-            option_labels: List of label elements
-            answer: The answer to select
-            
-        Returns:
-            bool: True if click succeeded, False otherwise
-        """
-        # Find and click the matching option
-        selected = False
-        for i, option_text in enumerate(options):
-            if answer and (answer.lower() == option_text.lower() or 
-                answer.lower() in option_text.lower() or 
-                option_text.lower() in answer.lower()):
-                try:
-                    # Try label click first if available
-                    if option_labels[i] is not None:
-                        option_labels[i].click()
-                        logger.info(f"Selected radio option '{option_text}' (via label) for '{field_label}'")
-                    else:
-                        option_elements[i].click()
-                        logger.info(f"Selected radio option '{option_text}' for '{field_label}'")
-                    selected = True
-                    break
-                except PlaywrightError as e:
-                    logger.warning(f"Error clicking radio: {e}. Trying JS click.")
-                    try:
-                        option_elements[i].evaluate("el => el.click()")
-                        logger.info(f"Selected radio option '{option_text}' (via JS) for '{field_label}'")
-                        selected = True
-                        break
-                    except PlaywrightError as js_e:
-                        logger.error(f"JS click also failed: {js_e}")
-        
-        # If no match found, prompt the user for input instead of auto-selecting
-        if not selected and len(option_elements) > 0:
-            # Show options to user
-            print(f"\n[APPLICATION FORM] No matching answer found. Select an option for: {field_label}")
-            for i, option in enumerate(options):
-                print(f"{i+1}. {option}")
-            
-            try:
-                selection = input(f"Enter option number (1-{len(options)}): ")
-                index = int(selection) - 1
-                if 0 <= index < len(options):
-                    # Try to click the selected option
-                    try:
-                        if option_labels[index] is not None:
-                            option_labels[index].click()
-                            logger.info(f"Selected user-prompted radio option '{options[index]}' (via label) for '{field_label}'")
+                                from ..helpers import save_answers
+                                import os
+                                
+                                # Get answers file path from the ApplicationWizard context
+                                answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
+                                save_answers(answers_file, answers)
+                                logger.info(f"Saved new answer for '{field_label}' immediately to disk")
+                            except Exception as e:
+                                logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
+                                
+                            # Try to click the selected option
+                            try:
+                                if option_labels[index] is not None:
+                                    option_labels[index].click()
+                                    logger.info(f"Selected user-prompted radio option '{options[index]}' (via label) for '{field_label}'")
+                                else:
+                                    option_elements[index].click()
+                                    logger.info(f"Selected user-prompted radio option '{options[index]}' for '{field_label}'")
+                                return True
+                            except PlaywrightError as e:
+                                logger.warning(f"Error clicking user-selected radio: {e}. Trying JS click.")
+                                try:
+                                    option_elements[index].evaluate("el => el.click()")
+                                    logger.info(f"Selected user-prompted radio option '{options[index]}' (via JS) for '{field_label}'")
+                                    return True
+                                except PlaywrightError as js_e:
+                                    logger.error(f"JS click also failed for user selection: {js_e}")
                         else:
-                            option_elements[index].click()
-                            logger.info(f"Selected user-prompted radio option '{options[index]}' for '{field_label}'")
-                        selected = True
-                    except PlaywrightError as e:
-                        logger.warning(f"Error clicking user-selected radio: {e}. Trying JS click.")
-                        try:
-                            option_elements[index].evaluate("el => el.click()")
-                            logger.info(f"Selected user-prompted radio option '{options[index]}' (via JS) for '{field_label}'")
-                            selected = True
-                        except PlaywrightError as js_e:
-                            logger.error(f"JS click also failed for user selection: {js_e}")
-            except (ValueError, KeyboardInterrupt):
-                logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. No option selected.")
+                            print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
+                    except (ValueError, KeyboardInterrupt):
+                        logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. No option selected.")
+                # Last resort attempt if all else fails
                 try:
                     option_elements[0].evaluate("el => el.click()")
                     logger.info(f"Selected first radio option '{options[0]}' (via JS) for '{field_label}'")
+                    return True
+                except PlaywrightError as js_e:
+                    logger.error(f"JS click also failed: {js_e}")
+                    return False
+            
+            # If there is a stored answer, try to find and click the matching option
+            else:
+                # Find and click the matching option
+                selected = False
+                for i, option_text in enumerate(options):
+                    if answer and (answer.lower() == option_text.lower() or 
+                        answer.lower() in option_text.lower() or 
+                        option_text.lower() in answer.lower()):
+                        try:
+                            # Try label click first if available
+                            if option_labels[i] is not None:
+                                option_labels[i].click()
+                                logger.info(f"Selected radio option '{option_text}' (via label) for '{field_label}'")
+                            else:
+                                option_elements[i].click()
+                                logger.info(f"Selected radio option '{option_text}' for '{field_label}'")
+                            selected = True
+                            break
+                        except PlaywrightError as e:
+                            logger.warning(f"Error clicking radio: {e}. Trying JS click.")
+                            try:
+                                option_elements[i].evaluate("el => el.click()")
+                                logger.info(f"Selected radio option '{option_text}' (via JS) for '{field_label}'")
+                                selected = True
+                                break
+                            except PlaywrightError as js_e:
+                                logger.error(f"JS click also failed: {js_e}")
+        
+                # If no match found, ask the user to select an option
+                if not selected and len(option_elements) > 0:
+                    # Show options to user
+                    if answer:
+                        print(f"\n[APPLICATION FORM] Your stored answer '{answer}' doesn't match any option. Select an option for: {field_label}")
+                    else:
+                        print(f"\n[APPLICATION FORM] No answer found. Select an option for: {field_label}")
+                        
+                    for i, option in enumerate(options):
+                        print(f"{i+1}. {option}")
+                    
+                    # Robust input handling with retry
+                    while True:
+                        try:
+                            selection = input(f"Enter option number (1-{len(options)}): ")
+                            index = int(selection) - 1
+                            if 0 <= index < len(options):
+                                # Save the selected answer for future use
+                                answers[field_label] = options[index]
+                                
+                                # Immediately save to disk
+                                try:
+                                    from ..helpers import save_answers
+                                    import os
+                                    
+                                    # Get answers file path from the ApplicationWizard context
+                                    answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
+                                    save_answers(answers_file, answers)
+                                    logger.info(f"Saved new answer for '{field_label}' immediately to disk")
+                                except Exception as e:
+                                    logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
+                                    
+                                # Try to click the selected option
+                                try:
+                                    if option_labels[index] is not None:
+                                        option_labels[index].click()
+                                        logger.info(f"Selected user-prompted radio option '{options[index]}' (via label) for '{field_label}'")
+                                        return True
+                                    else:
+                                        option_elements[index].click()
+                                        logger.info(f"Selected user-prompted radio option '{options[index]}' for '{field_label}'")
+                                        return True
+                                except PlaywrightError as e:
+                                    logger.warning(f"Error clicking user-selected radio: {e}. Trying JS click.")
+                                    try:
+                                        option_elements[index].evaluate("el => el.click()")
+                                        logger.info(f"Selected user-prompted radio option '{options[index]}' (via JS) for '{field_label}'")
+                                        return True
+                                    except PlaywrightError as js_e:
+                                        logger.error(f"JS click also failed for user selection: {js_e}")
+                            else:
+                                print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
+                        except (ValueError, KeyboardInterrupt):
+                            logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. No option selected.")
+                
+                # Last resort attempt if all else fails
+                try:
+                    option_elements[0].evaluate("el => el.click()")
+                    logger.info(f"Selected first radio option '{options[0]}' (via JS) for '{field_label}'")
+                    return True
                 except PlaywrightError as js_e:
                     logger.error(f"JS click also failed: {js_e}")
                     return False
         
+        except Exception as e:
+            logger.error(f"Unexpected error processing radio group '{field_label}': {e}")
+            return False
+            
         return True
         
     def process_radio_group(self, fieldset: Locator, answers: Dict[str, Any]) -> bool:

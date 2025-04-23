@@ -65,10 +65,20 @@ def save_application_result(data_dir: str, job_id: str, success: bool) -> None:
 
 def should_auto_answer(field_label: str, options: List[str]) -> bool:
     """Determine if we should auto-answer this question instead of prompting."""
-    # Always ask the user for input, no auto-answering
-    # This ensures the user is in control of their application answers
+    # Only auto-answer for years of experience questions (per user request)
+    if 'years of experience' in field_label.lower() and field_label in get_stored_answers():
+        logger.info(f"Will use stored answer for experience question: '{field_label}'")
+        return True
+    
+    # For all other questions, always prompt the user
     logger.info(f"Will ask user for input on question: '{field_label}'")
     return False
+
+
+def get_stored_answers() -> Dict[str, Any]:
+    """Get all stored answers from the default answers file."""
+    answers_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'answers', 'default.json')
+    return load_answers(answers_file)
 
 def get_auto_answer(field_label: str, options: List[str]) -> str:
     """Get an auto-generated answer based on field type and options."""
@@ -113,39 +123,27 @@ def get_auto_answer(field_label: str, options: List[str]) -> str:
     return options[0] if options else ""
 
 def get_answer_for_field(answers: Dict[str, Any], field_label: str) -> Optional[str]:
-    """Get the answer for a field from the answers dictionary."""
-    # Normalize the label by removing special characters and converting to lowercase
-    normalized_label = re.sub(r'[^a-zA-Z0-9\s]', '', field_label).lower()
+    """Get the answer for a field from the answers dictionary.
     
+    ONLY use EXACT MATCHING to prevent auto-filling fields without explicit stored answers.
+    This function will ONLY return an answer if there is an EXACT match in the answers dictionary,
+    either with exact case or case-insensitive comparison.
+    
+    Args:
+        answers: Dictionary of stored answers
+        field_label: The label text for the field
+        
+    Returns:
+        str: The stored answer if found, None otherwise
+    """
     # Try exact match first
     if field_label in answers:
         return answers[field_label]
     
-    # Try case-insensitive match
+    # Try case-insensitive match (still exact, just ignoring case)
     for key, value in answers.items():
         if key.lower() == field_label.lower():
             return value
-    
-    # Try partial match (field label contains answer key or vice versa)
-    for key, value in answers.items():
-        if (key.lower() in normalized_label or 
-            normalized_label in key.lower() or
-            any(word in normalized_label for word in key.lower().split() if len(word) > 3)):
-            return value
-    
-    # Try generic keywords
-    keywords = {
-        "phone": answers.get("Mobile phone number", ""),
-        "location": answers.get("Location (city)", ""),
-        "experience": answers.get("How many years*experience", ""),
-        "salary": answers.get("Salary expectation", ""),
-        "gender": answers.get("gender", ""),
-        "ethnicity": answers.get("ethnicity", ""),
-        "disability": answers.get("disability", {}).get("status", "")
-    }
-    
-    for keyword, answer in keywords.items():
-        if keyword in normalized_label and answer:
-            return answer
             
+    # No matching answer found - DO NOT AUTO-FILL
     return None
