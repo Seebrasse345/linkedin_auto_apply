@@ -1,8 +1,10 @@
 import logging
 import time
 import random
+import re
 from playwright.sync_api import Page, Locator, Error as PlaywrightError
-from typing import List, Dict, Set, Optional 
+from typing import List, Dict, Set, Optional
+from apply.wizard import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +19,13 @@ JOB_COMPANY_SELECTOR_PRIMARY = "span.job-card-container__primary-description"
 JOB_COMPANY_SELECTOR_SECONDARY = "a.job-card-container__company-name" 
 
 # Default settings
-SCROLL_INCREMENT = 2  # Scroll every Nth card
-MAX_SCROLL_ATTEMPTS = 30 # Max scroll attempts to prevent infinite loops
-SCROLL_STABILITY_CHECKS = 3 # Stop if DOM count is stable for this many checks
-POST_SCROLL_DELAY_MS = 1200 # Delay after each scroll_into_view
-EXTRACT_TIMEOUT_MS = 5000 # Timeout for extracting text/attributes from elements
-QUICK_EXTRACT_TIMEOUT_MS = 2000 # Faster timeout for individual fields
-INITIAL_WAIT_MS = 2000 # Wait briefly for initial cards to appear
+SCROLL_INCREMENT = 3  # Scroll every Nth card (increased for faster scrolling)
+MAX_SCROLL_ATTEMPTS = 20 # Max scroll attempts to prevent infinite loops (reduced from 30)
+SCROLL_STABILITY_CHECKS = 2 # Stop if DOM count is stable for this many checks (reduced from 3)
+POST_SCROLL_DELAY_MS = 800 # Delay after each scroll_into_view (reduced from 1200ms)
+EXTRACT_TIMEOUT_MS = 3000 # Timeout for extracting text/attributes from elements (reduced from 5000ms)
+QUICK_EXTRACT_TIMEOUT_MS = 1000 # Faster timeout for individual fields (reduced from 2000ms)
+INITIAL_WAIT_MS = 1500 # Wait briefly for initial cards to appear (reduced from 2000ms)
 
 # --- Selectors --- 
 # For the Job List Items (Scrolling & Clicking)
@@ -35,7 +37,7 @@ DETAILS_PANE_EASY_APPLY_BUTTON_SELECTOR = 'button.jobs-apply-button span.artdeco
 DETAILS_PANE_APPLY_BUTTON_SELECTOR = 'button.jobs-apply-button'
 
 # --- Settings --- 
-POST_CLICK_DELAY_MS = 1500 # Wait after clicking a card for pane to load
+POST_CLICK_DELAY_MS = 1000 # Wait after clicking a card for pane to load (reduced from 1500ms)
 
 def extract_job_id_from_url(url: str) -> str | None:
     """Helper to extract job ID from common LinkedIn job URL patterns."""
@@ -244,19 +246,51 @@ def load_all_job_cards(page: Page) -> List[Dict[str, str]]:
                 if is_easy_apply:
                     logger.info(f"    Attempting Easy Apply for Job ID: {job_id} ({job_title}) ...")
                     try:
-                        easy_apply_button = page.locator(DETAILS_PANE_EASY_APPLY_BUTTON_SELECTOR).first
-                        page.locator(DETAILS_PANE_EASY_APPLY_BUTTON_SELECTOR).first.click(timeout=5000)
-                        logger.info(f"      Easy Apply button clicked successfully.")
-                        # TODO: Call the application wizard logic from apply.wizard
-                        # application_successful = await handle_easy_apply(page) # Placeholder
-                        # if application_successful:
-                        #     logger.info(f"      Successfully applied to Job ID: {job_id}")
-                        # else:
-                        #     logger.warning(f"      Easy Apply failed or was aborted for Job ID: {job_id}")
-                        # Add a small delay maybe, or wait for modal to close?
-                        page.wait_for_timeout(2000) # Temporary pause after click
+                        # Click the Easy Apply button here (in scroll_loader) to avoid conflicts
+                        # First, verify we have an Easy Apply button
+                        easy_apply_button = page.locator(DETAILS_PANE_APPLY_BUTTON_SELECTOR)
+                        if easy_apply_button.count() > 0:
+                            # Use first() to handle multiple matching elements
+                            logger.info(f"    Clicking Easy Apply button for Job ID: {job_id}")
+                            easy_apply_button.first.click(timeout=3000)  # Reduced timeout from 5000ms
+                            page.wait_for_timeout(1500)  # Wait for form to load (reduced from 2000ms)
+                            
+                            # Set flag indicating button was already clicked
+                            job_details['easy_apply_clicked'] = True
+                            
+                            # Initialize the application wizard
+                            wizard = ApplicationWizard(page)
+                            
+                            # Start the application process and wait for it to complete
+                            logger.info(f"    Starting application wizard for Job ID: {job_id}")
+                            application_status = wizard.start_application(job_details)
+                            
+                            # Check application status
+                            if application_status == APPLICATION_SUCCESS:
+                                logger.info(f"    Successfully applied to Job ID: {job_id}")
+                                # Add a field to job_details to indicate success
+                                job_details['application_status'] = 'success'
+                            elif application_status == APPLICATION_FAILURE:
+                                logger.warning(f"    Application failed for Job ID: {job_id}")
+                                job_details['application_status'] = 'failure'
+                            else:  # APPLICATION_INCOMPLETE
+                                logger.warning(f"    Application incomplete for Job ID: {job_id}")
+                                job_details['application_status'] = 'incomplete'
+                                
+                            # Wait for UI to settle after application
+                            page.wait_for_timeout(1000)
+                        else:
+                            logger.warning(f"    No Easy Apply button found for Job ID: {job_id}")
+                            job_details['application_status'] = 'not_applicable'
+                            job_details['application_error'] = 'No Easy Apply button found'
+                    except PlaywrightError as pe:
+                        logger.error(f"    Playwright error during application process for Job ID {job_id}: {pe}")
+                        job_details['application_status'] = 'error'
+                        job_details['application_error'] = str(pe)
                     except Exception as e_apply:
-                        logger.error(f"    Failed to click Easy Apply button for Job ID {job_id}: {e_apply}")
+                        logger.error(f"    Failed during application process for Job ID {job_id}: {e_apply}")
+                        job_details['application_status'] = 'error'
+                        job_details['application_error'] = str(e_apply)
                 # --- End Easy Apply --- 
  
                 job_data_list.append(job_details)
