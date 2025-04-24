@@ -101,7 +101,7 @@ class FieldProcessor(ABC):
         return f"Unlabeled {field_type}"
     
     def ask_for_input(self, field_label: str, field_type: str, answers: Dict[str, Any], options: list = None) -> str:
-        """Get input for a field, either automatically via answer_generator or from user.
+        """Get input for a field ALWAYS via answer_generator and NEVER from user.
         
         Args:
             field_label: The label of the field
@@ -110,73 +110,131 @@ class FieldProcessor(ABC):
             options: Optional list of available options for select/radio fields
             
         Returns:
-            str: The answer (automatic or user-provided)
+            str: The answer (always automatically generated)
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Auto-generating answer for '{field_label}' (Type: {field_type})")
+        
+        # Import here to avoid circular imports
+        from ..cover_letter_generator import answer_generator
+        
+        # Construct the question with options if available
+        question = field_label
+        if options:
+            question += "\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+        
+        # Get job data for context
+        job_data = None
+        # First check self.job_data (this is how text_processor.py accesses it)
+        if hasattr(self, 'job_data') and self.job_data:
+            job_data = self.job_data
+            logger.info(f"Using processor's job_data for answer generation")
+        # Fallback to current_job_data in answers
+        elif 'current_job_data' in answers:
+            job_data = answers['current_job_data']
+            logger.info(f"Using answers['current_job_data'] for answer generation")
+        
+        if job_data:
+            logger.info(f"Job context: ID={job_data.get('job_id', 'Unknown')}, Title={job_data.get('title', 'Unknown')}, Company={job_data.get('company', 'Unknown')}")
+        
         try:
-            # Import here to avoid circular imports
-            from ..cover_letter_generator import answer_generator
-            
-            # Construct the question with options if available
-            question = field_label
-            if options:
-                question += "\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
-            
-            print(f"\n[APPLICATION FORM] Automatically answering: {field_label} (Type: {field_type})")
-            
-            # Get job data if this is a text field
-            job_data = None
-            if field_type == "text" or field_type == "textarea":
-                # Try to get job data from the processor or answers - matching pattern from text_processor.py
-                effective_job_data = None
-                
-                # First check self.job_data (this is how text_processor.py accesses it)
-                if hasattr(self, 'job_data') and self.job_data:
-                    effective_job_data = self.job_data
-                    logger.info("Using processor's job_data for text field answer generation")
-                
-                # Fallback to current_job_data in answers
-                if not effective_job_data and 'current_job_data' in answers:
-                    effective_job_data = answers['current_job_data']
-                    logger.info("Using answers['current_job_data'] for text field answer generation")
-                
-                job_data = effective_job_data
-                
-                if job_data:
-                    print(f"Including job description for text field: {field_label}")
-                    logger.info(f"Job data for text field answer: ID={job_data.get('job_id', 'Unknown')}, Title={job_data.get('title', 'Unknown')}, Company={job_data.get('company', 'Unknown')}")
-            
-            # Get automatic answer
+            # Always attempt to generate an answer
             auto_answer = answer_generator(question, field_type, job_data)
             
-            if auto_answer:
-                print(f"Auto-selected answer: {auto_answer}")
-                
-                # For numeric selections, convert back to the actual option text if options are provided
-                if options and auto_answer.isdigit() and 0 < int(auto_answer) <= len(options):
-                    option_index = int(auto_answer) - 1
-                    actual_answer = options[option_index]
-                    print(f"Selected option: {actual_answer}")
-                    
-                    # Save the actual text answer
+            # Check for the special fallback format (tuple indicates fallback answer that shouldn't be saved)
+            is_fallback = False
+            if isinstance(auto_answer, tuple) and len(auto_answer) == 2 and auto_answer[0] is False:
+                is_fallback = True
+                if auto_answer[1]:
+                    auto_answer = auto_answer[1]  # Use provided fallback if available
+                else:
+                    auto_answer = ""  # Otherwise empty string
+                logger.warning(f"Using temporary fallback answer for '{field_label}' (will not be saved)")
+            else:
+                logger.info(f"Generated answer for '{field_label}': {auto_answer if len(str(auto_answer)) < 50 else auto_answer[:50]+'...'}")
+            
+            # For numeric selections, convert to the actual option text
+            if options and auto_answer and auto_answer.isdigit() and 0 < int(auto_answer) <= len(options):
+                option_index = int(auto_answer) - 1
+                actual_answer = options[option_index]
+                logger.info(f"Converted numeric answer to option text: '{actual_answer}'")
+                if not is_fallback:  # Only save if not a fallback
                     answers[field_label] = actual_answer
-                    return actual_answer
-                
-                # For text inputs, use the answer directly
-                answers[field_label] = auto_answer
+                return actual_answer
+            
+            # Special handling for yes/no questions with options
+            if options and len(options) == 2 and auto_answer:
+                yes_no_map = {'yes': 0, 'no': 1}
+                auto_lower = auto_answer.lower()
+                if auto_lower in yes_no_map and ('yes' in options[0].lower() or 'no' in options[1].lower()):
+                    selected = options[yes_no_map[auto_lower]]
+                    logger.info(f"Mapped yes/no answer to option: '{selected}'")
+                    if not is_fallback:  # Only save if not a fallback
+                        answers[field_label] = selected
+                    return selected
+            
+            # For all other cases, use the answer directly
+            if auto_answer:
+                if not is_fallback:  # Only save if not a fallback
+                    answers[field_label] = auto_answer
                 return auto_answer
             
-            # Fallback to manual input if automatic answer fails
-            print(f"Could not get automatic answer, falling back to manual input")
+            # If no answer was generated, use a safe default but don't save it
+            logger.warning(f"No answer generated for '{field_label}', using temporary default (will not be saved)")
+            is_fallback = True  # Mark as fallback since we're using defaults
+            if field_type in ['radio', 'select'] and options:
+                # For yes/no questions, prefer 'yes' for remote/commute, 'no' for visa/sponsor
+                field_lower = field_label.lower()
+                if len(options) == 2:
+                    if any(kw in field_lower for kw in ['visa', 'sponsor', 'right to work', 'non-compete', 'competitor']):
+                        for i, opt in enumerate(options):
+                            if 'no' in opt.lower():
+                                logger.info(f"Using default 'No' for '{field_label}'")
+                                if not is_fallback:
+                                    answers[field_label] = opt
+                                return opt
+                    elif any(kw in field_lower for kw in ['remote', 'commut', 'relocat', 'travel']):
+                        for i, opt in enumerate(options):
+                            if 'yes' in opt.lower():
+                                logger.info(f"Using default 'Yes' for '{field_label}'")
+                                if not is_fallback:
+                                    answers[field_label] = opt
+                                return opt
+                
+                # No special case, use first option
+                default = options[0]
+                logger.info(f"Using first option as default: '{default}'")
+                if not is_fallback:
+                    answers[field_label] = default
+                return default
+            elif field_type in ['text', 'textarea']:
+                # For text fields, return a generic response
+                if 'experience' in field_label.lower():
+                    default = "2"
+                else:
+                    default = "Yes, I am interested in this position and meet the requirements."
+                logger.info(f"Using generic text as default: '{default}'")
+                if not is_fallback:
+                    answers[field_label] = default
+                return default
+            
+            # Ultimate fallback
+            default = "Yes" if field_type in ['radio', 'select'] else "2"
+            logger.info(f"Using ultimate fallback: '{default}'")
+            answers[field_label] = default
+            return default
+            
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Error getting automatic answer: {e}")
-            print(f"\n[APPLICATION FORM] Error getting automatic answer: {e}")
-        
-        # Manual input fallback
-        print(f"\n[APPLICATION FORM] Need input for: {field_label} (Type: {field_type})")
-        user_input = input("Please provide an answer: ")
-        
-        # Save the answer for future use
-        answers[field_label] = user_input
-        
-        return user_input
+            logger.error(f"Error generating answer for '{field_label}': {e}")
+            # Emergency fallback - never ask for user input
+            if field_type in ['radio', 'select'] and options:
+                default = options[0]  # Use first option as safest fallback
+                logger.info(f"Emergency fallback to first option: '{default}'")
+                answers[field_label] = default
+                return default
+            else:
+                default = "2" if 'experience' in field_label.lower() else "Yes"
+                logger.info(f"Emergency fallback to default text: '{default}'")
+                answers[field_label] = default
+                return default

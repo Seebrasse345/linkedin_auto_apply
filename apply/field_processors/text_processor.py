@@ -39,6 +39,12 @@ class TextInputProcessor(FieldProcessor):
                 or 'how many years' in field_lower):
             logger.info(f"Auto-filling years of experience text field: '{field_label}' with '2'")
             answer = "2"
+        elif not answer and ("notice period" in field_lower):
+            logger.info(f"Auto-filling notice period text field: '{field_label}' with '2'")
+            answer = "0"
+        elif not answer and ("salary" in field_lower):
+            logger.info(f"Auto-filling salary text field: '{field_label}' with '30000'")
+            answer = "30000"
         elif not answer:
             answer = self.ask_for_input(field_label, "text", answers)
         

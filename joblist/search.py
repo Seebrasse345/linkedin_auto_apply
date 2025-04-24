@@ -89,6 +89,12 @@ def construct_search_url(profile: dict) -> str:
     # --- Easy Apply Filter ---
     params['f_AL'] = 'true' # Always apply Easy Apply filter
 
+    # --- Low Number of Applicants Filter ---
+    low_number_applicants = filters.get('low_number_applicants', False)
+    if low_number_applicants:
+        params['f_EA'] = 'true'
+        logger.info("Including f_EA=true filter for jobs with fewer applicants")
+
     # --- Distance Filter ---
     distance_km = filters.get('distance_km')
     if distance_km and distance_km in DISTANCE_KM_MAP:

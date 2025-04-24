@@ -65,31 +65,47 @@ class RadioProcessor(FieldProcessor):
             
             if not options or not option_elements:
                 logger.warning(f"Could not determine options for radio group '{field_label}'")
-                # Just click the first radio button as default
+                
+                # No direct clicking of buttons - always use GPT to generate an answer
                 try:
-                    if radio_group.count() > 0:
-                        # First try to get the label for the first radio button and click that
-                        first_id = radio_group.first.get_attribute("id")
-                        if first_id:
-                            page = radio_group.first.page
-                            first_label = page.locator(f"label[for='{first_id}']")
-                            if first_label.count() > 0:
-                                first_label.first.click()
-                                logger.info(f"Clicked first radio button's label for '{field_label}'")
-                                return True
+                    # Make direct call to answer_generator to get an answer
+                    from ..cover_letter_generator import answer_generator
+                    ai_query = field_label + "\nThis is a radio button question but we couldn't determine the options."
+                    
+                    # Get job data for context
+                    job_data = None
+                    if 'current_job_data' in answers:
+                        job_data = answers['current_job_data']
+                    
+                    # Direct call to answer_generator
+                    ai_answer = answer_generator(ai_query, "radio", job_data)
+                    logger.info(f"GPT generated answer for undetermined radio options '{field_label}': {ai_answer}")
+                    
+                    # Now that we have an answer, we'll need to try to match it to a button
+                    # but since we don't know the options, we have to use other methods
+                    
+                    # Try to identify sponsorship questions using the field label
+                    field_lower = field_label.lower()
+                    if any(kw in field_lower for kw in ['visa', 'sponsor', 'sponsorship', 'require sponsorship', 'will you in the future require', 'work permit']):
+                        # For sponsorship questions, the right answer is almost always "No"
+                        logger.info(f"Identified sponsorship question '{field_label}' - will attempt to select 'No'")
                         
-                        # If no label, try clicking the radio directly
-                        radio_group.first.click()
-                        logger.info(f"Clicked first radio button for '{field_label}'")
-                        return True
-                except PlaywrightError as e:
-                    logger.warning(f"Failed to click first radio: {e}. Will try JS click.")
-                    try:
-                        radio_group.first.evaluate("el => el.click()")
-                        logger.info("Used JS click on first radio button")
-                        return True
-                    except PlaywrightError as js_e:
-                        logger.error(f"JS click also failed: {js_e}")
+                        # We need to try to find radio buttons with labels containing "No"
+                        all_labels = self.page.locator("label")
+                        for i in range(all_labels.count()):
+                            label = all_labels.nth(i)
+                            if "no" in label.inner_text().lower():
+                                label.click()
+                                logger.info(f"Found and clicked 'No' label for sponsorship question")
+                                return True
+                    
+                    # For now, we can't proceed further without knowing the options
+                    # We don't want to default to the first option, so we'll log and return false
+                    logger.warning(f"Cannot proceed with radio button without determining options and without a clear match strategy")
+                    
+                except Exception as e:
+                    logger.error(f"Error handling undetermined radio options: {e}")
+                
                 return False
             
             # Skip resume selection per user request
@@ -128,18 +144,22 @@ class RadioProcessor(FieldProcessor):
             if not answer:
                 # Check if this is a common question that we can auto-answer
                 field_lower = field_label.lower()
-                # Remote-related questions
-                if any(kw in field_lower for kw in ['remote', 'work from home', 'wfh', 'telecommut', 'home working']):
+                # Visa/sponsorship questions - ENHANCED DETECTION
+                if any(kw in field_lower for kw in ['visa', 'sponsor', 'sponsorship', 'require sponsorship', 'will you in the future require', 'work permit', 'right to work']):
+                    logger.info(f"Auto-answering visa/sponsorship question for '{field_label}' with 'No'")
+                    auto_answer = "No"
+                # Special case for exactly this question that's causing issues
+                elif 'are you comfortable working in a remote setting' in field_lower:
+                    logger.info(f"Auto-answering exact remote setting question for '{field_label}' with 'Yes'")
+                    auto_answer = "Yes"
+                # Remote-related questions - broader match
+                elif any(kw in field_lower for kw in ['remote', 'remote setting', 'work from home', 'wfh', 'telecommut', 'home working']):
                     logger.info(f"Auto-answering remote work question for '{field_label}' with 'Yes'")
                     auto_answer = "Yes"
                 # Commute/location questions
                 elif any(kw in field_lower for kw in ['commut', 'locat', 'relocat', 'travel', 'on-site']):
                     logger.info(f"Auto-answering commute/location question for '{field_label}' with 'Yes'")
                     auto_answer = "Yes"
-                # Visa/sponsorship questions
-                elif any(kw in field_lower for kw in ['visa', 'sponsor', 'right to work', 'work permit']):
-                    logger.info(f"Auto-answering visa/sponsorship question for '{field_label}' with 'No'")
-                    auto_answer = "No"
                 # For other questions, use the answer_generator
                 else:
                     auto_answer = None
@@ -159,28 +179,76 @@ class RadioProcessor(FieldProcessor):
                             # Save this answer for future use
                             answers[field_label] = options[selected_index]
                             return True
-                # Otherwise get answer using GPT
-                ai_answer = self.ask_for_input(field_label, "radio", answers, options)
+                # Non-compete questions
+                elif any(kw in field_lower for kw in ['non-compete', 'competitor', 'confidentiality agreement']):
+                    logger.info(f"Auto-answering non-compete question for '{field_label}' with 'No'")
+                    auto_answer = "No"
+                # Otherwise get answer using GPT - make sure we go through the full process
+                else:
+                    logger.info(f"No auto-answer matched for '{field_label}', using GPT to generate answer")
+                    # Make direct call to answer_generator to bypass any potential issues
+                    try:
+                        from ..cover_letter_generator import answer_generator
+                        ai_query = field_label
+                        if options:
+                            ai_query += "\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+                        
+                        # Get job data for context
+                        job_data = None
+                        if 'current_job_data' in answers:
+                            job_data = answers['current_job_data']
+                            
+                        # Direct call to answer_generator
+                        ai_answer = answer_generator(ai_query, "radio", job_data)
+                        logger.info(f"GPT generated answer for '{field_label}': {ai_answer}")
+                        
+                        # Check if answer is a number and convert to option text
+                        if ai_answer.isdigit() and 0 < int(ai_answer) <= len(options):
+                            index = int(ai_answer) - 1
+                            ai_answer = options[index]
+                            logger.info(f"Converted numeric answer to option text: '{ai_answer}'")
+                        
+                        auto_answer = ai_answer
+                    except Exception as e:
+                        logger.error(f"Error using GPT to answer '{field_label}': {e}")
+                        # Fallback to a safe default
+                        if any(kw in field_lower for kw in ['visa', 'sponsor', 'sponsorship', 'require sponsorship', 'will you in the future require', 'work permit', 'right to work', 'non-compete', 'competitor']):
+                            auto_answer = "No"
+                            logger.info(f"Fallback for visa/sponsorship question '{field_label}' to 'No'")
+                        elif any(kw in field_lower for kw in ['remote', 'commut', 'relocat', 'travel']):
+                            auto_answer = "Yes"
+                        else:
+                            auto_answer = options[0]  # Default to first option as safest fallback
+                        logger.info(f"Falling back to default answer for '{field_label}': {auto_answer}")
                 
-                # Find the index of the selected option
+                # Find the index of the selected option using the final determined auto_answer
                 selected_index = -1
-                for i, option_text in enumerate(options):
-                    if option_text.lower() == ai_answer.lower():
-                        selected_index = i
-                        break
+                if auto_answer: # Ensure we have a determined answer
+                    for i, option_text in enumerate(options):
+                        # Try exact match first, then case-insensitive
+                        if option_text == auto_answer or option_text.lower() == auto_answer.lower():
+                            selected_index = i
+                            logger.info(f"Found match for determined answer '{auto_answer}' at index {i}")
+                            break
                 
-                # If no match found, use first option as fallback
+                # If no exact match, default to the first option as a last resort
                 if selected_index == -1:
+                    logger.warning(f"Could not find exact match for determined answer '{auto_answer}' in options {options}. Defaulting to first option.")
                     selected_index = 0
                 
-                if selected_index >= 0:
+                # Attempt to click the selected option
+                if selected_index >= 0 and selected_index < len(option_elements):
+                    selected_option_text = options[selected_index]
                     if self._click_radio_option(option_elements[selected_index], option_labels[selected_index]):
-                        logger.info(f"Auto-selected option '{options[selected_index]}' for '{field_label}'")
-                        
-                        # Save this answer for future use
-                        answers[field_label] = options[selected_index]
+                        logger.info(f"Successfully auto-selected option '{selected_option_text}' for '{field_label}'")
+                        answers[field_label] = selected_option_text # Save the actually selected text
                         return True
-                    return False
+                    else:
+                        logger.error(f"Failed to click determined option '{selected_option_text}' for '{field_label}'")
+                        return False # Indicate failure without prompting
+                else:
+                    logger.error(f"Selected index {selected_index} is out of bounds for options/elements.")
+                    return False # Indicate failure
             
             # Try to find exact or similar match for stored answer
             selected = False
@@ -193,12 +261,65 @@ class RadioProcessor(FieldProcessor):
                         selected = True
                         break
             
-            # If no match, select first option
+            # If no match, don't select the first option automatically - ask GPT instead
             if not selected and option_elements and len(option_elements) > 0:
-                if self._click_radio_option(option_elements[0], option_labels[0]):
-                    logger.info(f"Selected first radio option '{options[0]}' for '{field_label}'")
-                    return True
-                return False
+                field_lower = field_label.lower()
+                
+                # Sponsorship/visa questions should always default to "No"
+                if any(kw in field_lower for kw in ['visa', 'sponsor', 'sponsorship', 'require sponsorship', 'will you in the future require', 'work permit']):
+                    # Find the "No" option
+                    no_index = -1
+                    for i, opt in enumerate(options):
+                        if opt.lower() == 'no':
+                            no_index = i
+                            break
+                    
+                    if no_index >= 0:
+                        if self._click_radio_option(option_elements[no_index], option_labels[no_index]):
+                            logger.info(f"Selected 'No' for sponsorship question '{field_label}'")
+                            return True
+                
+                # Instead of defaulting to first option, generate an answer using GPT
+                try:
+                    from ..cover_letter_generator import answer_generator
+                    ai_query = field_label
+                    if options:
+                        ai_query += "\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+                    
+                    # Get job data for context
+                    job_data = None
+                    if 'current_job_data' in answers:
+                        job_data = answers['current_job_data']
+                    
+                    # Direct call to answer_generator
+                    ai_answer = answer_generator(ai_query, "radio", job_data)
+                    logger.info(f"GPT generated answer for unmatched radio '{field_label}': {ai_answer}")
+                    
+                    # Check if answer is a number and convert to option text
+                    selected_index = -1
+                    if ai_answer.isdigit() and 0 < int(ai_answer) <= len(options):
+                        selected_index = int(ai_answer) - 1
+                    else:
+                        # Try to match the text answer to an option
+                        for i, opt in enumerate(options):
+                            if ai_answer.lower() in opt.lower() or opt.lower() in ai_answer.lower():
+                                selected_index = i
+                                break
+                    
+                    if selected_index >= 0:
+                        if self._click_radio_option(option_elements[selected_index], option_labels[selected_index]):
+                            logger.info(f"Selected GPT-chosen option '{options[selected_index]}' for '{field_label}'")
+                            # Save this answer for future use
+                            answers[field_label] = options[selected_index]
+                            return True
+                    
+                    # If we still couldn't match, log the issue but don't default to first option
+                    logger.warning(f"Could not match GPT answer '{ai_answer}' to any radio option for '{field_label}'")
+                    return False
+                    
+                except Exception as e:
+                    logger.error(f"Error generating GPT answer for unmatched radio '{field_label}': {e}")
+                    return False
             
             return True
                 
@@ -408,63 +529,8 @@ class RadioGroupProcessor(FieldProcessor):
                 logger.warning(f"No valid options found for radio group '{field_label}' - skipping")
                 return True
                 
-            # Always ask for user input on every radio question without a stored answer
-            # Never auto-select options (per user request)
-            if not answer or answer is None:
-                # Show options to user
-                print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
-                for i, option in enumerate(options):
-                    print(f"{i+1}. {option}")
-                
-                # Robust input handling with retry
-                while True:
-                    try:
-                        selection = input(f"Enter option number (1-{len(options)}): ")
-                        index = int(selection) - 1
-                        if 0 <= index < len(options):
-                            # Save the selected answer for future use
-                            answers[field_label] = options[index]
-                            
-                            # Immediately save to disk
-                            try:
-                                from ..helpers import save_answers
-                                import os
-                                
-                                # Get answers file path from the ApplicationWizard context
-                                answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
-                                save_answers(answers_file, answers)
-                                logger.info(f"Saved new answer for '{field_label}' immediately to disk")
-                            except Exception as e:
-                                logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
-                                
-                            # Try to click the selected option
-                            try:
-                                if option_labels[index] is not None:
-                                    option_labels[index].click()
-                                    logger.info(f"Selected user-prompted radio option '{options[index]}' (via label) for '{field_label}'")
-                                else:
-                                    option_elements[index].click()
-                                    logger.info(f"Selected user-prompted radio option '{options[index]}' for '{field_label}'")
-                                return True
-                            except PlaywrightError as e:
-                                logger.warning(f"Error clicking user-selected radio: {e}. Trying JS click.")
-                                try:
-                                    option_elements[index].evaluate("el => el.click()")
-                                    logger.info(f"Selected user-prompted radio option '{options[index]}' (via JS) for '{field_label}'")
-                                    return True
-                                except PlaywrightError as js_e:
-                                    logger.error(f"JS click also failed for user selection: {js_e}")
-                        else:
-                            print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
-                    except (ValueError, KeyboardInterrupt):
-                        logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. No option selected.")
-                        # Never auto-select options when no stored answer matches or user doesn't select anything
-                        logger.warning(f"No selection made for radio field '{field_label}' - user input required")
-                        print(f"\n[APPLICATION FORM] No selection made for '{field_label}'. The field will remain unselected.")
-                        return False
-            
             # If there is a stored answer, try to find and click the matching option
-            else:
+            if answer:
                 # Find and click the matching option
                 selected = False
                 for i, option_text in enumerate(options):
@@ -472,7 +538,6 @@ class RadioGroupProcessor(FieldProcessor):
                         answer.lower() in option_text.lower() or 
                         option_text.lower() in answer.lower()):
                         try:
-                            # Try label click first if available
                             if option_labels[i] is not None:
                                 option_labels[i].click()
                                 logger.info(f"Selected radio option '{option_text}' (via label) for '{field_label}'")
@@ -491,68 +556,127 @@ class RadioGroupProcessor(FieldProcessor):
                             except PlaywrightError as js_e:
                                 logger.error(f"JS click also failed: {js_e}")
         
-                # If no match found, ask the user to select an option
-                if not selected and len(option_elements) > 0:
-                    # Show options to user
-                    if answer:
-                        print(f"\n[APPLICATION FORM] Your stored answer '{answer}' doesn't match any option. Select an option for: {field_label}")
-                    else:
-                        print(f"\n[APPLICATION FORM] No answer found. Select an option for: {field_label}")
+                # If no match found, use GPT to generate an answer, never select first option automatically
+                if not selected and option_elements and len(option_elements) > 0:
+                    # First check for sponsorship questions
+                    field_lower = field_label.lower()
+                    if any(kw in field_lower for kw in ['visa', 'sponsor', 'sponsorship', 'require sponsorship', 'will you in the future require', 'work permit']):
+                        # Find the "No" option
+                        no_index = -1
+                        for i, opt in enumerate(options):
+                            if opt.lower() == 'no':
+                                no_index = i
+                                break
                         
-                    for i, option in enumerate(options):
-                        print(f"{i+1}. {option}")
+                        if no_index >= 0:
+                            if self.radio_processor._click_radio_option(option_elements[no_index], option_labels[no_index]):
+                                logger.info(f"Selected 'No' for sponsorship question '{field_label}'")
+                                return True
                     
-                    # Robust input handling with retry
-                    while True:
-                        try:
-                            selection = input(f"Enter option number (1-{len(options)}): ")
-                            index = int(selection) - 1
-                            if 0 <= index < len(options):
-                                # Save the selected answer for future use
-                                answers[field_label] = options[index]
-                                
-                                # Immediately save to disk
-                                try:
-                                    from ..helpers import save_answers
-                                    import os
-                                    
-                                    # Get answers file path directly
-                                    answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
-                                    save_answers(answers_file, answers)
-                                    logger.info(f"Saved new answer for '{field_label}' immediately to disk")
-                                except Exception as e:
-                                    logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
-                                    
-                                # Try to click the selected option
-                                try:
-                                    if option_labels[index] is not None:
-                                        option_labels[index].click()
-                                        logger.info(f"Selected user-prompted radio option '{options[index]}' (via label) for '{field_label}'")
-                                        return True
-                                    else:
-                                        option_elements[index].click()
-                                        logger.info(f"Selected user-prompted radio option '{options[index]}' for '{field_label}'")
-                                        return True
-                                except PlaywrightError as e:
-                                    logger.warning(f"Error clicking user-selected radio: {e}. Trying JS click.")
-                                    try:
-                                        option_elements[index].evaluate("el => el.click()")
-                                        logger.info(f"Selected user-prompted radio option '{options[index]}' (via JS) for '{field_label}'")
-                                        return True
-                                    except PlaywrightError as js_e:
-                                        logger.error(f"JS click also failed for user selection: {js_e}")
-                            else:
-                                print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
-                        except (ValueError, KeyboardInterrupt):
-                            logger.warning(f"Invalid input or keyboard interrupt for '{field_label}'. No option selected.")
+                    # Otherwise use GPT to generate an answer
+                    try:
+                        from ..cover_letter_generator import answer_generator
+                        ai_query = field_label
+                        if options:
+                            ai_query += "\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+                        
+                        # Get job data for context
+                        job_data = None
+                        if 'current_job_data' in answers:
+                            job_data = answers['current_job_data']
+                        
+                        # Direct call to answer_generator
+                        ai_answer = answer_generator(ai_query, "radio", job_data)
+                        logger.info(f"GPT generated answer for unmatched radio '{field_label}': {ai_answer}")
+                        
+                        # Check if answer is a number and convert to option text
+                        selected_index = -1
+                        if isinstance(ai_answer, str) and ai_answer.isdigit() and 0 < int(ai_answer) <= len(options):
+                            selected_index = int(ai_answer) - 1
+                        else:
+                            # Try to match the text answer to an option
+                            for i, opt in enumerate(options):
+                                if isinstance(ai_answer, str) and (ai_answer.lower() in opt.lower() or opt.lower() in ai_answer.lower()):
+                                    selected_index = i
+                                    break
+                        
+                        if selected_index >= 0:
+                            if self.radio_processor._click_radio_option(option_elements[selected_index], option_labels[selected_index]):
+                                logger.info(f"Selected GPT-chosen option '{options[selected_index]}' for '{field_label}'")
+                                # Save this answer for future use
+                                answers[field_label] = options[selected_index]
+                                return True
+                        
+                        logger.warning(f"Could not match GPT answer '{ai_answer}' to any radio option for '{field_label}'")
+                        return False
+                        
+                    except Exception as e:
+                        logger.error(f"Error generating GPT answer for unmatched radio '{field_label}': {e}")
+                        return False
                 
-                # Only indicate no selection if we truly haven't made a selection
-                if not selected:
-                    logger.warning(f"No selection made for radio field '{field_label}' - user input required")
-                    print(f"\n[APPLICATION FORM] No selection made for '{field_label}'. The field will remain unselected.")
-                    return False
-                return True
-        
+                return selected # Return True if an option was selected, False otherwise
+            else:
+                # If no stored answer, use GPT to generate one - never select first option automatically
+                if option_elements and len(option_elements) > 0:
+                    # Check for sponsorship questions first
+                    field_lower = field_label.lower()
+                    if any(kw in field_lower for kw in ['visa', 'sponsor', 'sponsorship', 'require sponsorship', 'will you in the future require', 'work permit']):
+                        # Find the "No" option
+                        no_index = -1
+                        for i, opt in enumerate(options):
+                            if opt.lower() == 'no':
+                                no_index = i
+                                break
+                        
+                        if no_index >= 0:
+                            if self.radio_processor._click_radio_option(option_elements[no_index], option_labels[no_index]):
+                                logger.info(f"Selected 'No' for sponsorship question '{field_label}'")
+                                answers[field_label] = options[no_index] # Save answer
+                                return True
+                    
+                    # Generate answer using GPT
+                    try:
+                        from ..cover_letter_generator import answer_generator
+                        ai_query = field_label
+                        if options:
+                            ai_query += "\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+                        
+                        # Get job data for context
+                        job_data = None
+                        if 'current_job_data' in answers:
+                            job_data = answers['current_job_data']
+                        
+                        # Direct call to answer_generator
+                        ai_answer = answer_generator(ai_query, "radio", job_data)
+                        logger.info(f"GPT generated answer for radio '{field_label}': {ai_answer}")
+                        
+                        # Process the answer
+                        selected_index = -1
+                        if isinstance(ai_answer, str) and ai_answer.isdigit() and 0 < int(ai_answer) <= len(options):
+                            selected_index = int(ai_answer) - 1
+                        else:
+                            # Try to match the text answer to an option
+                            for i, opt in enumerate(options):
+                                if isinstance(ai_answer, str) and (ai_answer.lower() in opt.lower() or opt.lower() in ai_answer.lower()):
+                                    selected_index = i
+                                    break
+                        
+                        if selected_index >= 0:
+                            if self.radio_processor._click_radio_option(option_elements[selected_index], option_labels[selected_index]):
+                                logger.info(f"Selected GPT-chosen option '{options[selected_index]}' for '{field_label}'")
+                                # Save this answer for future use
+                                answers[field_label] = options[selected_index]
+                                return True
+                        
+                        logger.warning(f"Could not match GPT answer '{ai_answer}' to any radio option for '{field_label}'")
+                        return False
+                        
+                    except Exception as e:
+                        logger.error(f"Error generating GPT answer for radio '{field_label}': {e}")
+                        return False
+                
+                return True # Return True if no options were found
+            
         except Exception as e:
             logger.error(f"Unexpected error processing radio group '{field_label}': {e}")
             return False

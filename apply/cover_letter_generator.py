@@ -269,6 +269,8 @@ def answer_generator(question: str, field_type: str = None, job_data: Dict[str, 
         "Always output only the single number corresponding to your selection, with no additional text. YOU MUST ALWAYS select an answer\n"
         "IF THE QUESTION IS A TEXT FIELD QUESTION THAT IS NOT A SELECT QUESTION AND IS OF THE LIKES of Why inspired you to apply etc DO NOT SELECT a number option instead write a proffesional answer using the CV and job description in full THIS IS THE ONLY CASE YOU SHOULD RETURN A TEXT ANSWER IF NUMERICAL MULTIPLE CHOISE options e.g 1. 2. 3. or 1.Yes 2.NO etc are AVAILABLE NEVER WRITE TEXT.\n"
         "DO NOT REPEAT THE AVAILABLE OPTIONS IN YOUR OUTPUT. Some extra information for the more critical options NO driving license, Has British passports is a british citizen , IS WILLING TO GET A SECURITY CLEARANCE HOWEVER DOES NOT POSSESS ONE HAS POSSESSED ONE AND NO ACTIVE ONE BUT WILLING TO always willing to commute, ALWAYS COMFORTABLE WITH WORKING ANYWHERE etc \n"
+        " IF IT IS A SIMPLE QUESTION ANSWER IN A SIMPLE WAY NO NEED TO MAKE IT COMPLICATED FOR example do you have a  non-compete should just be a no or under 5-10 words\n"
+        " If the question is like Headline just give a cover letter headline BE CONSICE ON SIMPLE QUESTIONS\n"
         "Extra information user is Male, age 23, has BSc physics, living in Sheffield, England, United Kingdom, for years of experience quesitons use heuristics and CV information if not default to 2. For more generic questions like why do you want the role answer appropriately proffessionally using the CV and job description in full \n"
         f"Here are the user's past answers in JSON format: {json.dumps(past_answers)}\n\n"
         f"Here is the USER'S CV:\n{cv_content}\n\n"
@@ -293,31 +295,61 @@ def answer_generator(question: str, field_type: str = None, job_data: Dict[str, 
         {'role': 'user', 'content': user_prompt}
     ]
     data = {
-        'model': 'gpt-4o',
+        'model': OPENAI_MODEL,
         'messages': messages
     }
-    try:
-        response = requests.post(OPENAI_API_URL, headers=headers, json=data, timeout=30)
-        response.raise_for_status()
-        raw_content = response.json()['choices'][0]['message']['content'].strip()
-        
-        # For text fields, return the entire response without extraction
-        if field_type in ["text", "textarea"]:
-            logger.info(f"Generated text answer for question '{question}': '{raw_content[:50]}...'")
-            return raw_content
-        
-        # For non-text fields, extract only the numeric selection
-        match = re.search(r'\d+', raw_content)
-        if match:
-            selection = match.group(0)
-            logger.info(f"Generated numeric answer for question '{question}': {selection}")
-            return selection
-        else:
-            logger.warning(f"No numeric answer found in API response for question '{question}': '{raw_content}'")
-            # If no numeric answer found but we have text, return it for text fields
-            if field_type in ["text", "textarea"] and raw_content:
+    # Add retry mechanism for rate limit errors (429)
+    max_retries = 3
+    retry_delay = 60  # Initial delay in seconds
+    
+    for retry in range(max_retries + 1):
+        try:
+            response = requests.post(OPENAI_API_URL, headers=headers, json=data, timeout=30)
+            
+            # Check specifically for rate limit errors (429)
+            if response.status_code == 429:
+                if retry < max_retries:
+                    wait_time = retry_delay * (2 ** retry)  # Exponential backoff
+                    logger.warning(f"Rate limit (429) reached. Waiting {wait_time} seconds before retry {retry+1}/{max_retries}")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"Max retries reached for rate limit. Question: '{question}'")
+                    # Return a special tuple to indicate this is a fallback answer that shouldn't be saved
+                    return (False, "")
+            
+            # For other HTTP errors
+            response.raise_for_status()
+            
+            raw_content = response.json()['choices'][0]['message']['content'].strip()
+            
+            # For text fields, return the entire response without extraction
+            if field_type in ["text", "textarea"]:
+                logger.info(f"Generated text answer for question '{question}': '{raw_content[:50]}...'")
                 return raw_content
-            return False
-    except Exception as e:
-        logger.error(f"Failed to generate answer for question '{question}': {e}")
-        return ""
+            
+            # For non-text fields, extract only the numeric selection
+            match = re.search(r'\d+', raw_content)
+            if match:
+                selection = match.group(0)
+                logger.info(f"Generated numeric answer for question '{question}': {selection}")
+                return selection
+            else:
+                logger.warning(f"No numeric answer found in API response for question '{question}': '{raw_content}'")
+                # If no numeric answer found but we have text, return it for text fields
+                if field_type in ["text", "textarea"] and raw_content:
+                    return raw_content
+                return (False, False)  # Special format indicating fallback shouldn't be saved
+                
+        except requests.exceptions.HTTPError as e:
+            if retry < max_retries and '429' in str(e):
+                wait_time = retry_delay * (2 ** retry)
+                logger.warning(f"Rate limit (429) reached. Waiting {wait_time} seconds before retry {retry+1}/{max_retries}")
+                time.sleep(wait_time)
+            else:
+                logger.error(f"HTTP error generating answer for question '{question}': {e}")
+                return (False, "")  # Special format indicating fallback shouldn't be saved
+                
+        except Exception as e:
+            logger.error(f"Failed to generate answer for question '{question}': {e}")
+            return (False, "")  # Special format indicating fallback shouldn't be saved

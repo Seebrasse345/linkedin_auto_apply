@@ -3,16 +3,17 @@ credentials:
   password: Bakumonsuno45! # Replace with your actual password or use ENC() later
 search_profiles:
   - name: graduate-data-uk
-    query: "Junior"
-    location: "Sheffield"
+    query: "junior"
+    location: "United Kingdom"
     # Add geoId - Find the correct one for your target location(s)
     # Example for UK: 101165590, Sheffield: 104470941
-    geoId: 104470941 # Sheffield
+    geoId: 101165590 # United Kingdom
     filters:
       distance_km: 15 # Options: 8, 15, 40, 80
       date_posted: "past_24h" # past_24h / past_week / past_month / any_time
-      remote: ["on_site","hybrid","remote"] # on_site / remote / hybrid
+      remote: ["remote"] # on_site / remote / hybrid
       experience: [] # internship, entry_level, associate, mid_senior_level, director, executive
+      low_number_applicants: false # true to filter for 'easy apply' jobs with fewer applicants (f_EA=true)
 runtime:
   headless: false # Set to false for visibility
   accept_cookies_selector: 'button[action-type="ACCEPT"]'
