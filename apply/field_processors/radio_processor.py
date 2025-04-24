@@ -124,42 +124,20 @@ class RadioProcessor(FieldProcessor):
                             return True
                         return False
             
-            # For required questions without stored answers, make an automatic selection rather than prompting
+            # For required questions without stored answers, use answer_generator to make a selection
             if not answer:
-                selected_index = -1
+                # Get answer using GPT
+                ai_answer = self.ask_for_input(field_label, "radio", answers, options)
                 
-                # Make an intelligent default choice based on the field type
-                if 'commut' in field_label.lower() or 'location' in field_label.lower():
-                    # For commuting questions, prefer "Yes"
-                    yes_index = next((i for i, opt in enumerate(options) if opt.lower() == 'yes'), -1)
-                    if yes_index >= 0:
-                        selected_index = yes_index
-                elif 'gender' in field_label.lower() or 'sex' in field_label.lower():
-                    # Default to "Prefer not to say" for gender if available
-                    prefer_not_say_index = next((i for i, opt in enumerate(options) if 'prefer not' in opt.lower()), -1)
-                    if prefer_not_say_index >= 0:
-                        selected_index = prefer_not_say_index
-                    else:
-                        selected_index = 0  # Default to first option
-                elif 'ethnicity' in field_label.lower() or 'race' in field_label.lower():
-                    # Default to "Prefer not to say" or "White" for ethnicity
-                    prefer_not_say_index = next((i for i, opt in enumerate(options) if 'prefer not' in opt.lower()), -1)
-                    white_index = next((i for i, opt in enumerate(options) if 'white' in opt.lower()), -1)
-                    if prefer_not_say_index >= 0:
-                        selected_index = prefer_not_say_index
-                    elif white_index >= 0:
-                        selected_index = white_index
-                    else:
-                        selected_index = 0
-                elif 'veteran' in field_label.lower() or 'military' in field_label.lower():
-                    # Default to "No" for veteran status
-                    no_index = next((i for i, opt in enumerate(options) if opt.lower() == 'no'), -1)
-                    if no_index >= 0:
-                        selected_index = no_index
-                    else:
-                        selected_index = 0
-                else:
-                    # Default to first option for other fields
+                # Find the index of the selected option
+                selected_index = -1
+                for i, option_text in enumerate(options):
+                    if option_text.lower() == ai_answer.lower():
+                        selected_index = i
+                        break
+                
+                # If no match found, use first option as fallback
+                if selected_index == -1:
                     selected_index = 0
                 
                 if selected_index >= 0:

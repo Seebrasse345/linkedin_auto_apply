@@ -10,7 +10,7 @@ search_profiles:
     geoId: 104470941 # Sheffield
     filters:
       distance_km: 15 # Options: 8, 15, 40, 80
-      date_posted: "past_week" # past_24h / past_week / past_month / any_time
+      date_posted: "past_24h" # past_24h / past_week / past_month / any_time
       remote: ["on_site","hybrid"] # on_site / remote / hybrid
       experience: [] # internship, entry_level, associate, mid_senior_level, director, executive
 runtime:

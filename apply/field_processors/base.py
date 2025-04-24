@@ -100,17 +100,79 @@ class FieldProcessor(ABC):
         field_type = field_element.get_attribute("type") or "field"
         return f"Unlabeled {field_type}"
     
-    def ask_for_input(self, field_label: str, field_type: str, answers: Dict[str, Any]) -> str:
-        """Ask the user for input when an answer is not available.
+    def ask_for_input(self, field_label: str, field_type: str, answers: Dict[str, Any], options: list = None) -> str:
+        """Get input for a field, either automatically via answer_generator or from user.
         
         Args:
             field_label: The label of the field
             field_type: The type of field
             answers: Dictionary to store the answer
+            options: Optional list of available options for select/radio fields
             
         Returns:
-            str: The user's input
+            str: The answer (automatic or user-provided)
         """
+        try:
+            # Import here to avoid circular imports
+            from ..cover_letter_generator import answer_generator
+            
+            # Construct the question with options if available
+            question = field_label
+            if options:
+                question += "\nOptions:\n" + "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(options)])
+            
+            print(f"\n[APPLICATION FORM] Automatically answering: {field_label} (Type: {field_type})")
+            
+            # Get job data if this is a text field
+            job_data = None
+            if field_type == "text" or field_type == "textarea":
+                # Try to get job data from the processor or answers - matching pattern from text_processor.py
+                effective_job_data = None
+                
+                # First check self.job_data (this is how text_processor.py accesses it)
+                if hasattr(self, 'job_data') and self.job_data:
+                    effective_job_data = self.job_data
+                    logger.info("Using processor's job_data for text field answer generation")
+                
+                # Fallback to current_job_data in answers
+                if not effective_job_data and 'current_job_data' in answers:
+                    effective_job_data = answers['current_job_data']
+                    logger.info("Using answers['current_job_data'] for text field answer generation")
+                
+                job_data = effective_job_data
+                
+                if job_data:
+                    print(f"Including job description for text field: {field_label}")
+                    logger.info(f"Job data for text field answer: ID={job_data.get('job_id', 'Unknown')}, Title={job_data.get('title', 'Unknown')}, Company={job_data.get('company', 'Unknown')}")
+            
+            # Get automatic answer
+            auto_answer = answer_generator(question, field_type, job_data)
+            
+            if auto_answer:
+                print(f"Auto-selected answer: {auto_answer}")
+                
+                # For numeric selections, convert back to the actual option text if options are provided
+                if options and auto_answer.isdigit() and 0 < int(auto_answer) <= len(options):
+                    option_index = int(auto_answer) - 1
+                    actual_answer = options[option_index]
+                    print(f"Selected option: {actual_answer}")
+                    
+                    # Save the actual text answer
+                    answers[field_label] = actual_answer
+                    return actual_answer
+                
+                # For text inputs, use the answer directly
+                answers[field_label] = auto_answer
+                return auto_answer
+            
+            # Fallback to manual input if automatic answer fails
+            print(f"Could not get automatic answer, falling back to manual input")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Error getting automatic answer: {e}")
+            print(f"\n[APPLICATION FORM] Error getting automatic answer: {e}")
+        
+        # Manual input fallback
         print(f"\n[APPLICATION FORM] Need input for: {field_label} (Type: {field_type})")
         user_input = input("Please provide an answer: ")
         

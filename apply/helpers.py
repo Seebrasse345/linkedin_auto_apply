@@ -65,9 +65,10 @@ def save_application_result(data_dir: str, job_id: str, success: bool) -> None:
 
 def should_auto_answer(field_label: str, options: List[str]) -> bool:
     """Determine if we should auto-answer this question instead of prompting."""
-    # Only auto-answer for years of experience questions (per user request)
-    if 'years of experience' in field_label.lower() and field_label in get_stored_answers():
-        logger.info(f"Will use stored answer for experience question: '{field_label}'")
+    # Auto-answer for any years of experience questions
+    if ('years of experience' in field_label.lower() or 'years of work experience' in field_label.lower() 
+            or 'how many years' in field_label.lower()):
+        logger.info(f"Will auto-answer experience question with default value: '{field_label}'")
         return True
     
     # For all other questions, always prompt the user
@@ -82,19 +83,26 @@ def get_stored_answers() -> Dict[str, Any]:
 
 def get_auto_answer(field_label: str, options: List[str]) -> str:
     """Get an auto-generated answer based on field type and options."""
+    # Always answer '2' for any years of experience questions
+    field_lower = field_label.lower()
+    if ('years of experience' in field_lower or 'years of work experience' in field_lower
+            or 'how many years' in field_lower):
+        logger.info(f"Auto-answering years of experience question with '2': {field_label}")
+        return "2"
+    
     # Handles common yes/no questions
     if len(options) == 2 and 'yes' in options[0].lower() and 'no' in options[1].lower():
         # For disability questions, prefer "No"
-        if 'disability' in field_label.lower() or 'disabled' in field_label.lower():
+        if 'disability' in field_lower or 'disabled' in field_lower:
             return "No"
         # For experience or qualification questions, prefer "Yes"
-        elif any(kw in field_label.lower() for kw in ['experience', 'work', 'skill', 'qualified', 'eligible']):
+        elif any(kw in field_lower for kw in ['experience', 'work', 'skill', 'qualified', 'eligible']):
             return "Yes"
         # For location/commute questions, prefer "Yes"
-        elif any(kw in field_label.lower() for kw in ['commut', 'locat', 'relocat', 'move', 'travel']):
+        elif any(kw in field_lower for kw in ['commut', 'locat', 'relocat', 'move', 'travel']):
             return "Yes"
         # For education questions, prefer "Yes" (having the degree is better than not)
-        elif any(kw in field_label.lower() for kw in ['degree', 'education', 'bachelor', 'master']):
+        elif any(kw in field_lower for kw in ['degree', 'education', 'bachelor', 'master']):
             return "Yes"
     
     # For demographic questions

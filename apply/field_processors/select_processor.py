@@ -66,26 +66,8 @@ class SelectProcessor(FieldProcessor):
             # 2. Stored answer doesn't match available options, OR
             # 3. This is a critical question (work authorization, etc.)
             if not answer or answer not in options or is_critical_question:
-                # Show options to user
-                print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
-                if answer and answer not in options:
-                    print(f"Your stored answer '{answer}' doesn't match any available option.")
-                
-                for i, option in enumerate(options):
-                    print(f"{i+1}. {option}")
-                
-                # Robust input handling with retry
-                while True:
-                    try:
-                        selection = input(f"Enter option number (1-{len(options)}): ")
-                        index = int(selection) - 1
-                        if 0 <= index < len(options):
-                            answer = options[index]
-                            break
-                        else:
-                            print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
-                    except (ValueError, KeyboardInterrupt):
-                        print("Please enter a valid number.")
+                # Use automatic answer generator instead of prompting user
+                answer = self.ask_for_input(field_label, "select", answers, options)
                 
                 # Save the answer
                 answers[field_label] = answer
@@ -137,39 +119,20 @@ class SelectProcessor(FieldProcessor):
                 return True
             # No stored answer case - prompt user for input
             else:
-                # Show options to user
-                print(f"\n[APPLICATION FORM] Select an option for: {field_label}")
-                for i, option in enumerate(options):
-                    print(f"{i+1}. {option}")
+                # Use automatic answer generator
+                selected_option = self.ask_for_input(field_label, "select", answers, options)
                 
-                # Robust input handling with retry
-                selected_option = ""
-                while True:
-                    try:
-                        selection = input(f"Enter option number (1-{len(options)}): ")
-                        index = int(selection) - 1
-                        if 0 <= index < len(options):
-                            selected_option = options[index]
-                            # Save the new answer for future use
-                            answers[field_label] = selected_option
-                            
-                            # Immediately save to disk
-                            try:
-                                from ..helpers import save_answers
-                                import os
-                                
-                                # Get answers file path directly
-                                answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
-                                save_answers(answers_file, answers)
-                                logger.info(f"Saved new answer for '{field_label}' immediately to disk")
-                            except Exception as e:
-                                logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
-                                
-                            break
-                        else:
-                            print(f"Invalid selection. Please enter a number between 1 and {len(options)}.")
-                    except (ValueError, KeyboardInterrupt):
-                        print("Please enter a valid number.")
+                # Immediately save to disk
+                try:
+                    from ..helpers import save_answers
+                    import os
+                    
+                    # Get answers file path directly
+                    answers_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'answers', 'default.json')
+                    save_answers(answers_file, answers)
+                    logger.info(f"Saved new answer for '{field_label}' immediately to disk")
+                except Exception as e:
+                    logger.warning(f"Could not immediately save answer for '{field_label}': {e}")
                 
                 select_element.select_option(label=selected_option)
                 logger.info(f"Selected user-chosen option '{selected_option}' for '{field_label}'")

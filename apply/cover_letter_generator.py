@@ -39,7 +39,7 @@ def get_openai_api_key() -> str:
 OPENAI_MODEL = "gpt-4.1-2025-04-14"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MAX_TOKENS = 1000
-OPENAI_TEMPERATURE = 0.7
+OPENAI_TEMPERATURE = 0.8
 
 def read_cv() -> str:
     """
@@ -236,3 +236,88 @@ Sincerely,
 """
     
     return cover_letter
+
+def answer_generator(question: str, field_type: str = None, job_data: Dict[str, Any] = None) -> str:
+    """Generate an answer for an Easy Apply question based on past answers, CV, and job data.
+    
+    Args:
+        question: The question to answer, may include options for select/radio fields
+        field_type: The type of field (text, select, radio, etc.)
+        job_data: Optional job data including description, only used for text fields
+        
+    Returns:
+        str: The answer, either a number for select/radio fields or text for text fields
+    """
+    # Load past answers
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(base_dir)
+    answers_path = os.path.join(project_root, 'answers', 'default.json')
+    try:
+        with open(answers_path, 'r', encoding='utf-8') as f:
+            past_answers = json.load(f)
+    except Exception as e:
+        logger.error(f"Failed to load past answers: {e}")
+        past_answers = {}
+    # Read CV content
+    cv_content = read_cv()
+    # System prompt for GPT
+    system_message = (
+        "You are an expert assistant for selecting the correct numeric option for LinkedIn Easy Apply questions.\n"
+        "You are given the user's past answers to similar linkedin questions in JSON format and the user's CV You must use this information to select the best option.\n"
+        "When asked a question, select the option number that best matches the user's history and past answers to these questions and profile.\n"
+        "If no past data, choose the most willing option e.g willing to learn/commute etc available unless its a blatant lie. Do not fabricate options not present.\n"
+        "Always output only the single number corresponding to your selection, with no additional text. YOU MUST ALWAYS select an answer\n"
+        "IF THE QUESTION IS A TEXT FIELD QUESTION THAT IS NOT A SELECT QUESTION AND IS OF THE LIKES of Why inspired you to apply etc DO NOT SELECT a number option instead write a proffesional answer using the CV and job description in full THIS IS THE ONLY CASE YOU SHOULD RETURN A TEXT ANSWER IF NUMERICAL MULTIPLE CHOISE options e.g 1. 2. 3. or 1.Yes 2.NO etc are AVAILABLE NEVER WRITE TEXT.\n"
+        "DO NOT REPEAT THE AVAILABLE OPTIONS IN YOUR OUTPUT. Some extra information for the more critical options NO driving license, Has British passports is a british citizen , IS WILLING TO GET A SECURITY CLEARANCE HOWEVER DOES NOT POSSESS ONE HAS POSSESSED ONE AND NO ACTIVE ONE BUT WILLING TO always willing to commute etc \n"
+        "Extra information user is Male, age 23, has BSc physics, living in Sheffield, England, United Kingdom, for years of experience quesitons use heuristics and CV information if not default to 2. For more generic questions like why do you want the role answer appropriately proffessionally using the CV and job description in full \n"
+        f"Here are the user's past answers in JSON format: {json.dumps(past_answers)}\n\n"
+        f"Here is the USER'S CV:\n{cv_content}\n\n"
+    )
+    # User prompt content
+    user_prompt = "Here is the question and the available options for you to answer\n"
+    user_prompt += f"Question: {question}"
+    
+    # Add job description for text fields
+    if field_type in ["text", "textarea"] and job_data and "description" in job_data:
+        user_prompt += f"\n\nThis question is about a {job_data.get('title', 'job')} at {job_data.get('company', 'a company')}\n"
+        user_prompt += f"Job Description:\n{job_data.get('description', '')}\n"
+        user_prompt += "\nPlease provide a professional response related to this job description."
+    # Prepare API request
+    api_key = get_openai_api_key()
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {api_key}'
+    }
+    messages = [
+        {'role': 'system', 'content': system_message},
+        {'role': 'user', 'content': user_prompt}
+    ]
+    data = {
+        'model': 'gpt-4o',
+        'messages': messages
+    }
+    try:
+        response = requests.post(OPENAI_API_URL, headers=headers, json=data, timeout=30)
+        response.raise_for_status()
+        raw_content = response.json()['choices'][0]['message']['content'].strip()
+        
+        # For text fields, return the entire response without extraction
+        if field_type in ["text", "textarea"]:
+            logger.info(f"Generated text answer for question '{question}': '{raw_content[:50]}...'")
+            return raw_content
+        
+        # For non-text fields, extract only the numeric selection
+        match = re.search(r'\d+', raw_content)
+        if match:
+            selection = match.group(0)
+            logger.info(f"Generated numeric answer for question '{question}': {selection}")
+            return selection
+        else:
+            logger.warning(f"No numeric answer found in API response for question '{question}': '{raw_content}'")
+            # If no numeric answer found but we have text, return it for text fields
+            if field_type in ["text", "textarea"] and raw_content:
+                return raw_content
+            return False
+    except Exception as e:
+        logger.error(f"Failed to generate answer for question '{question}': {e}")
+        return ""
