@@ -101,6 +101,14 @@ def get_auto_answer(field_label: str, options: List[str]) -> str:
         # For location/commute questions, prefer "Yes"
         elif any(kw in field_lower for kw in ['commut', 'locat', 'relocat', 'move', 'travel']):
             return "Yes"
+        # For remote work questions, prefer "Yes"
+        elif any(kw in field_lower for kw in ['remote', 'home working', 'work from home', 'telecommut']):
+            logger.info(f"Auto-answering remote work question with 'Yes': {field_label}")
+            return "Yes"
+        # For visa/sponsorship questions, prefer "No"
+        elif any(kw in field_lower for kw in ['visa', 'sponsor', 'right to work', 'work permit']):
+            logger.info(f"Auto-answering visa/sponsorship question with 'No': {field_label}")
+            return "No"
         # For education questions, prefer "Yes" (having the degree is better than not)
         elif any(kw in field_lower for kw in ['degree', 'education', 'bachelor', 'master']):
             return "Yes"

@@ -117,10 +117,60 @@ class SelectProcessor(FieldProcessor):
                 select_element.select_option(label=selected_option)
                 logger.info(f"Selected user-chosen option '{selected_option}' for '{field_label}'")
                 return True
-            # No stored answer case - prompt user for input
+            # No stored answer case - try auto-answer first, then prompt user for input
             else:
-                # Use automatic answer generator
-                selected_option = self.ask_for_input(field_label, "select", answers, options)
+                # Check if this is a common question that we can auto-answer
+                field_lower = field_label.lower()
+                # Remote-related questions
+                if any(kw in field_lower for kw in ['remote', 'work from home', 'wfh', 'telecommut', 'home working']):
+                    # Find the 'Yes' option
+                    auto_answer = None
+                    for option in options:
+                        if option.lower() == 'yes':
+                            auto_answer = option
+                            logger.info(f"Auto-answering remote work question for '{field_label}' with '{auto_answer}'")
+                            break
+                # Commute/location questions
+                elif any(kw in field_lower for kw in ['commut', 'locat', 'relocat', 'travel', 'on-site']):
+                    # Find the 'Yes' option
+                    auto_answer = None
+                    for option in options:
+                        if option.lower() == 'yes':
+                            auto_answer = option
+                            logger.info(f"Auto-answering commute/location question for '{field_label}' with '{auto_answer}'")
+                            break
+                # Visa/sponsorship questions
+                elif any(kw in field_lower for kw in ['visa', 'sponsor']):
+                    # Find the 'No' option
+                    auto_answer = None
+                    for option in options:
+                        if option.lower() == 'no':
+                            auto_answer = option
+                            logger.info(f"Auto-answering visa/sponsorship question for '{field_label}' with '{auto_answer}'")
+                            break
+                # Years of experience questions
+                elif any(kw in field_lower for kw in ['years of experience', 'years of work experience', 'how many years']):
+                    # Try to find options with '0-2', '1-3', '2-5' or similar patterns, or '2 years' etc.
+                    auto_answer = None
+                    for option in options:
+                        if ('0-2' in option or '1-3' in option or '0-1' in option or 
+                            '2 years' in option.lower() or '1-2' in option or 
+                            option == '2'):
+                            auto_answer = option
+                            logger.info(f"Auto-answering years of experience question for '{field_label}' with '{auto_answer}'")
+                            break
+                # For other questions, use the answer_generator
+                else:
+                    auto_answer = None
+                
+                # If we have auto-answer, use it, otherwise call ask_for_input
+                if auto_answer:
+                    selected_option = auto_answer
+                    # Save the answer for future use
+                    answers[field_label] = selected_option
+                else:
+                    # Use automatic answer generator
+                    selected_option = self.ask_for_input(field_label, "select", answers, options)
                 
                 # Immediately save to disk
                 try:

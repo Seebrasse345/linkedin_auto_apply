@@ -124,9 +124,42 @@ class RadioProcessor(FieldProcessor):
                             return True
                         return False
             
-            # For required questions without stored answers, use answer_generator to make a selection
+            # For required questions without stored answers, try auto-answer first before using ask_for_input
             if not answer:
-                # Get answer using GPT
+                # Check if this is a common question that we can auto-answer
+                field_lower = field_label.lower()
+                # Remote-related questions
+                if any(kw in field_lower for kw in ['remote', 'work from home', 'wfh', 'telecommut', 'home working']):
+                    logger.info(f"Auto-answering remote work question for '{field_label}' with 'Yes'")
+                    auto_answer = "Yes"
+                # Commute/location questions
+                elif any(kw in field_lower for kw in ['commut', 'locat', 'relocat', 'travel', 'on-site']):
+                    logger.info(f"Auto-answering commute/location question for '{field_label}' with 'Yes'")
+                    auto_answer = "Yes"
+                # Visa/sponsorship questions
+                elif any(kw in field_lower for kw in ['visa', 'sponsor', 'right to work', 'work permit']):
+                    logger.info(f"Auto-answering visa/sponsorship question for '{field_label}' with 'No'")
+                    auto_answer = "No"
+                # For other questions, use the answer_generator
+                else:
+                    auto_answer = None
+                
+                # If we have an auto-answer, use it
+                if auto_answer:
+                    # Find the index of the selected option
+                    selected_index = -1
+                    for i, option_text in enumerate(options):
+                        if option_text.lower() == auto_answer.lower():
+                            selected_index = i
+                            break
+                    
+                    if selected_index >= 0:
+                        if self._click_radio_option(option_elements[selected_index], option_labels[selected_index]):
+                            logger.info(f"Auto-selected option '{options[selected_index]}' for '{field_label}'")
+                            # Save this answer for future use
+                            answers[field_label] = options[selected_index]
+                            return True
+                # Otherwise get answer using GPT
                 ai_answer = self.ask_for_input(field_label, "radio", answers, options)
                 
                 # Find the index of the selected option

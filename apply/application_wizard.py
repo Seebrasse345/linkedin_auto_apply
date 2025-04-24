@@ -159,10 +159,34 @@ class ApplicationWizard:
                                 logger.info(f"Saved debug screenshot to {screenshot_path}")
                             except Exception as e:
                                 logger.error(f"Failed to save debug screenshot: {e}")
+                            
+                            # Emergency exit procedure: First try to click Dismiss (X) button
+                            logger.info("Activating emergency exit procedure for infinite loop")
+                            try:
+                                # Look for the dismiss (X) button by aria-label
+                                dismiss_button = self.page.locator('button[aria-label="Dismiss"], button[data-test-modal-close-btn]')
+                                if dismiss_button.count() > 0:
+                                    logger.info("Found Dismiss (X) button, clicking it")
+                                    dismiss_button.first.click(force=True, timeout=2000)
+                                    self.page.wait_for_timeout(1000)
+                                    
+                                    # After clicking X, look for and click the Discard button in the confirmation dialog
+                                    discard_button = self.page.locator('button:has-text("Discard"), button[data-control-name="discard_application_confirm_btn"]')
+                                    if discard_button.count() > 0:
+                                        logger.info("Found Discard button, clicking it to abort application")
+                                        discard_button.first.click(force=True, timeout=2000)
+                                        self.page.wait_for_timeout(1000)
+                                        logger.info("Successfully exited application via emergency procedure")
+                                    else:
+                                        logger.warning("Could not find Discard button after clicking Dismiss")
+                                else:
+                                    logger.warning("Could not find Dismiss (X) button for emergency exit")
+                            except Exception as exit_e:
+                                logger.error(f"Error during emergency exit procedure: {exit_e}")
                                 
                             self.failed_applications.append({
                                 "job": job_data,
-                                "reason": f"Infinite loop detected in application form at step {step_count + 1}",
+                                "reason": f"Infinite loop detected in application form at step {step_count + 1}, emergency exit activated",
                                 "timestamp": datetime.now().isoformat()
                             })
                             self._save_application_data()
@@ -349,7 +373,7 @@ class ApplicationWizard:
                         # Try multiple click strategies for reliability
                         try:
                             # First try regular click
-                            review_button.first.click(timeout=3000)
+                            review_button.first.click(force=True,timeout=3000)
                         except PlaywrightError:
                             # Fall back to JavaScript click
                             review_button.first.evaluate("button => button.click()")

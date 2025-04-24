@@ -33,7 +33,13 @@ class TextInputProcessor(FieldProcessor):
         field_label = self.get_field_label(input_element)
         answer = get_answer_for_field(answers, field_label)
         
-        if not answer:
+        # Special handling for years of experience questions in text fields
+        field_lower = field_label.lower()
+        if not answer and ('years of experience' in field_lower or 'years of work experience' in field_lower 
+                or 'how many years' in field_lower):
+            logger.info(f"Auto-filling years of experience text field: '{field_label}' with '2'")
+            answer = "2"
+        elif not answer:
             answer = self.ask_for_input(field_label, "text", answers)
         
         # Save answer for future use
