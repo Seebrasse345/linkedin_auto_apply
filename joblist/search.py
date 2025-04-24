@@ -57,28 +57,43 @@ def _build_filter_param(config_key: str,
          logger.warning(f"Multiple values provided for single-value filter '{config_key}'. Using first valid value: {mapped_values[0]}")
          return mapped_values[0]
 
-
-def construct_search_url(profile: dict) -> str:
+#profile name str or None if not given
+def construct_search_url(profile: dict, profile_name: str | None = None) -> str:
     """
     Constructs a LinkedIn job search URL from a configuration profile.
 
     Args:
         profile: A dictionary representing a search profile from config.yml.
+        profile_name: Name of the profile being processed
 
     Returns:
         A string containing the fully constructed LinkedIn job search URL.
-
-    Raises:
-        ValueError: If required profile keys are missing.
     """
+    # Check for direct collection URL options first (these bypass normal search)
+    if 'filters' in profile:
+        filters = profile['filters']
+        
+        # Auto Easy Apply Collection
+        if filters.get('auto_easy', False):
+            logger.info(f"Using LinkedIn's Easy Apply collection for profile '{profile_name}'")
+            return "https://www.linkedin.com/jobs/collections/easy-apply/?discover=recommended&discoveryOrigin=JOBS_HOME_JYMBII"
+        
+        # Auto Recommended Collection
+        if filters.get('auto_recommend', False):
+            logger.info(f"Using LinkedIn's Recommended jobs collection for profile '{profile_name}'")
+            return "https://www.linkedin.com/jobs/collections/recommended/?discover=recommended&discoveryOrigin=JOBS_HOME_JYMBII"
+    else:
+        filters = {}
+    
+    # Continue with regular URL construction if direct collections not requested
     base_url = "https://www.linkedin.com/jobs/search/"
 
-    required_keys = ['query', 'location', 'geoId', 'filters']
+    required_keys = ['query', 'location', 'geoId']
     if not all(key in profile for key in required_keys):
         missing = [key for key in required_keys if key not in profile]
-        raise ValueError(f"Search profile is missing required keys: {missing}")
+        logger.warning(f"Search profile '{profile_name}' is missing required keys: {missing}")
+        return None
 
-    filters = profile['filters']
     params = {}
 
     # --- Core Search Terms ---

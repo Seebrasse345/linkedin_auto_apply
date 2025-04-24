@@ -261,6 +261,14 @@ def answer_generator(question: str, field_type: str = None, job_data: Dict[str, 
     # Read CV content
     cv_content = read_cv()
     # System prompt for GPT
+    # Filter past answers to the top 20% of the json
+    # turn past answers to a list of key value strings 
+    filtered_past_answers = []
+    for key, value in past_answers.items():
+        filtered_past_answers.append(f"{key}: {value}")
+    # only take top 5% of the list
+    filtered_past_answers = filtered_past_answers[:len(filtered_past_answers) // 20]
+    
     system_message = (
         "You are an expert assistant for selecting the correct numeric option for LinkedIn Easy Apply questions.\n"
         "You are given the user's past answers to similar linkedin questions in JSON format and the user's CV You must use this information to select the best option.\n"
@@ -272,13 +280,13 @@ def answer_generator(question: str, field_type: str = None, job_data: Dict[str, 
         " IF IT IS A SIMPLE QUESTION ANSWER IN A SIMPLE WAY NO NEED TO MAKE IT COMPLICATED FOR example do you have a  non-compete should just be a no or under 5-10 words\n"
         " If the question is like Headline just give a cover letter headline BE CONSICE ON SIMPLE QUESTIONS\n"
         "Extra information user is Male, age 23, has BSc physics, living in Sheffield, England, United Kingdom, for years of experience quesitons use heuristics and CV information if not default to 2. For more generic questions like why do you want the role answer appropriately proffessionally using the CV and job description in full \n"
-        f"Here are the user's past answers in JSON format: {json.dumps(past_answers)}\n\n"
+        f"Here are the user's past answers in JSON format: {json.dumps(filtered_past_answers)}\n\n"
         f"Here is the USER'S CV:\n{cv_content}\n\n"
     )
     # User prompt content
     user_prompt = "Here is the question and the available options for you to answer\n"
     user_prompt += f"Question: {question}"
-    
+    #filter past answers to the top 20%  of the json 
     # Add job description for text fields
     if field_type in ["text", "textarea"] and job_data and "description" in job_data:
         user_prompt += f"\n\nThis question is about a {job_data.get('title', 'job')} at {job_data.get('company', 'a company')}\n"

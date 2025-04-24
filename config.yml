@@ -3,17 +3,19 @@ credentials:
   password: Bakumonsuno45! # Replace with your actual password or use ENC() later
 search_profiles:
   - name: graduate-data-uk
-    query: "junior"
-    location: "United Kingdom"
+    query: ""
+    location: "Sheffield"
     # Add geoId - Find the correct one for your target location(s)
     # Example for UK: 101165590, Sheffield: 104470941
-    geoId: 101165590 # United Kingdom
+    geoId: 104470941 # Sheffield
     filters:
       distance_km: 15 # Options: 8, 15, 40, 80
       date_posted: "past_24h" # past_24h / past_week / past_month / any_time
-      remote: ["remote"] # on_site / remote / hybrid
-      experience: [] # internship, entry_level, associate, mid_senior_level, director, executive
+      remote: [] # on_site / remote / hybrid
+      experience: ["entry_level","associate"] # internship, entry_level, associate, mid_senior_level, director, executive
       low_number_applicants: false # true to filter for 'easy apply' jobs with fewer applicants (f_EA=true)
+      auto_easy: false # true to directly use LinkedIn's Easy Apply collection
+      auto_recommend: true # true to directly use LinkedIn's Recommended jobs collection
 runtime:
   headless: false # Set to false for visibility
   accept_cookies_selector: 'button[action-type="ACCEPT"]'
