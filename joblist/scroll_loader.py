@@ -7,8 +7,12 @@ import json
 from playwright.sync_api import Page, Locator, Error as PlaywrightError
 from typing import List, Dict, Set, Optional
 from apply import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
+from browser.context import load_config
 
 logger = logging.getLogger(__name__)
+
+# Path to config file
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'config.yml')
 
 # Selectors (Adjust based on LinkedIn structure)
 SCROLL_CONTAINER_SELECTOR = "div.jobs-search-results-list" # Updated selector for the scrollable job list container
@@ -95,6 +99,30 @@ def _extract_job_id(card: Locator) -> Optional[str]:
         logger.debug(f"Quick Job ID extraction failed for card: {e}")
     return job_id
 
+def contains_banned_words(job_title: str, banned_words: List[str]) -> bool:
+    """Check if a job title contains any of the banned words.
+    
+    Args:
+        job_title: The job title to check.
+        banned_words: List of banned words/phrases to check against.
+        
+    Returns:
+        True if the job title contains any banned words, False otherwise.
+    """
+    if not job_title or not banned_words:
+        return False
+        
+    # Convert title to lowercase for case-insensitive comparison
+    job_title_lower = job_title.lower()
+    
+    # Check if any banned word is in the job title
+    for word in banned_words:
+        if word.lower() in job_title_lower:
+            logger.info(f"Job title '{job_title}' contains banned word '{word}'")
+            return True
+            
+    return False
+
 def load_previously_processed_jobs():
     """Load lists of successfully applied and failed applications from JSON files.
     
@@ -134,6 +162,7 @@ def load_all_job_cards(page: Page):
     2. Scrolls cards at indices (0, SCROLL_INCREMENT, ...) up to that max count into view.
     3. Iterates through located cards, clicks each, waits for details pane, extracts.
     4. Checks for pagination at the bottom and navigates to next pages if available.
+    5. Skips jobs with titles containing banned words from the config.
     
     Args:
         page: The Playwright Page object.
@@ -144,6 +173,14 @@ def load_all_job_cards(page: Page):
     job_data_list: List[Dict[str, str]] = []
     seen_job_ids: Set[str] = set()
 
+    # Load config to get the banned words
+    config = load_config(CONFIG_PATH)
+    banned_words = config.get('banned_words', [])
+    if banned_words:
+        logger.info(f"Loaded {len(banned_words)} banned words from config: {', '.join(banned_words)}")
+    else:
+        logger.info("No banned words found in config")
+    
     # Load previously processed job IDs
     successful_job_ids, failed_job_ids = load_previously_processed_jobs()
     previously_processed_ids = successful_job_ids.union(failed_job_ids)
@@ -245,6 +282,11 @@ def load_all_job_cards(page: Page):
                 try:
                     title_elem = page.locator(DETAILS_PANE_TITLE_SELECTOR).first
                     job_title = title_elem.inner_text(timeout=EXTRACT_TIMEOUT_MS // 2).strip()
+                    
+                    # Check if job title contains any banned words
+                    if contains_banned_words(job_title, banned_words):
+                        logger.info(f"  Card {i+1}: Skipping job with banned word in title: '{job_title}'")
+                        continue  # Skip this job and move to the next one
                 except PlaywrightError as e_title:
                     logger.warning(f"  Card {i+1}: Failed to extract title from details pane: {e_title}")
                 
@@ -446,15 +488,14 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
             if back_button.count() > 0:
                 logger.info("Found 'Back to search results' button - clicking it first")
                 back_button.click()
-                page.wait_for_timeout(3000)  # Wait for page to transition
-                logger.info("Returned to search results page")
+                page.wait_for_timeout(6000)  # Wait longer after clicking back
         except Exception as e:
             logger.info(f"No back button found or error checking: {e}")
             
         # Refresh the page to ensure we have fresh content
         logger.info("Refreshing page to ensure fresh content before pagination check")
         page.reload()
-        page.wait_for_timeout(5000)  # Give page time to reload completely
+        page.wait_for_timeout(10000)  # Increased wait for reload
             
         # Check if pagination container exists
         pagination = page.locator(PAGINATION_CONTAINER_SELECTOR)
@@ -498,11 +539,11 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
             try:
                 # Wait for URL to change first (indicates navigation started)
                 # We'll use a shorter timeout per attempt but more attempts
-                page.wait_for_url(lambda url: url != current_url, timeout=4000)
+                page.wait_for_url(lambda url: url != current_url, timeout=8000)
                 logger.info("URL changed, checking for job listings...")
                 
                 # Wait for page to stabilize
-                page.wait_for_timeout(4000)
+                page.wait_for_timeout(8000)
                 
                 # Check if page number has changed if we know the current page number
                 if current_page_number is not None:
@@ -514,7 +555,7 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
                             if match and int(match.group(1)) > current_page_number:
                                 logger.info(f"Page number increased from {current_page_number} to {match.group(1)}")
                                 # Success - we've confirmed page has changed
-                                page.wait_for_timeout(3000)  # Wait for content to fully load
+                                page.wait_for_timeout(6000)  # Wait longer for content to load
                                 return False
                         except Exception as e:
                             logger.warning(f"Error extracting new page number: {e}")
@@ -542,7 +583,7 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
                             cards = page.locator(f"{selector} li.jobs-search-results__list-item")
                             if cards.count() > 0:
                                 logger.info(f"Found {cards.count()} job cards on new page")
-                                page.wait_for_timeout(3000)  # Wait for content to fully load
+                                page.wait_for_timeout(6000)  # Wait longer for content to load
                                 return False
                             else:
                                 logger.info("List container found but no job cards yet")
@@ -554,7 +595,7 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
                 if attempt < max_attempts - 1:  # Don't reload on last attempt
                     logger.warning(f"Attempt {attempt+1}/{max_attempts}: No job list found with any selector. Reloading page...")
                     page.reload()
-                    page.wait_for_timeout(5000)  # Give more time after reload
+                    page.wait_for_timeout(10000)  # Give extra time after reload
                 else:
                     # On last attempt, just wait longer before giving up
                     logger.warning(f"Attempt {attempt+1}/{max_attempts}: No job list found with any selector. Waiting longer...")
@@ -565,7 +606,7 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
                     logger.info("Reloading page after navigation issue")
                     try:
                         page.reload()
-                        page.wait_for_timeout(5000)
+                        page.wait_for_timeout(10000)
                     except Exception as reload_error:
                         logger.warning(f"Error during reload: {reload_error}")
         
@@ -575,7 +616,7 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
             any_job_section = page.locator('section.jobs-search-results').first
             if any_job_section:
                 logger.info("Found a job section on the page after multiple attempts")
-                page.wait_for_timeout(3000)  # Wait for content to fully load
+                page.wait_for_timeout(6000)  # Wait longer for content to load
                 return False
         except Exception:
             pass

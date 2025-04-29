@@ -4,18 +4,22 @@ credentials:
 search_profiles:
   - name: graduate-data-uk
     query: ""
-    location: "Sheffield"
+    location: "United Kingdom"
     # Add geoId - Find the correct one for your target location(s)
     # Example for UK: 101165590, Sheffield: 104470941
-    geoId: 104470941 # Sheffield
+    geoId: 101165590 # United Kingdom
     filters:
       distance_km: 15 # Options: 8, 15, 40, 80
       date_posted: "past_24h" # past_24h / past_week / past_month / any_time
-      remote: [] # on_site / remote / hybrid
+      remote: ["hybrid","remote"] # on_site / remote / hybrid
       experience: ["entry_level","associate"] # internship, entry_level, associate, mid_senior_level, director, executive
-      low_number_applicants: false # true to filter for 'easy apply' jobs with fewer applicants (f_EA=true)
+      job_type: ["full_time"] # full_time, part_time, contract, temporary, volunteer, internship - leave empty for all types
+      low_number_applicants: true # true to filter for 'easy apply' jobs with fewer applicants (f_EA=true)
       auto_easy: false # true to directly use LinkedIn's Easy Apply collection
-      auto_recommend: true # true to directly use LinkedIn's Recommended jobs collection
+      auto_recommend: false # true to directly use LinkedIn's Recommended jobs collection
+# Banned words - job titles containing any of these words will be skipped
+banned_words: ["business","support","executive","officer","talent","specialist","representative","speaker","communication","consultant","events","producer","Personal","Assistant","marketer","content","digital","field","medical","clinical","sales", "account executive", "business development", "sales associate", "sales representative", "sales rep", "inside sales", "outside sales", "sales specialist", "pre-sales", "post-sales", "lead generation", "customer acquisition", "territory manager", "client acquisition", "relationship manager", "solutions consultant", "sales manager", "marketing", "brand manager", "growth manager", "content marketer", "content marketing", "performance marketing", "digital marketing", "social media", "seo specialist", "sem specialist", "campaign manager", "email marketing", "communications specialist", "advertising", "promotion manager", "community manager", "events coordinator", "crm specialist", "crm manager", "customer relationship", "customer success", "customer success manager", "account manager", "retention specialist", "client success", "loyalty manager", "content writer", "content creator", "content strategist", "copywriter", "copywriting", "blogger", "editorial assistant", "influencer marketing", "creative strategist", "content manager", "publishing assistant", "courier", "delivery driver", "delivery associate", "logistics", "logistics coordinator", "shipping coordinator", "supply chain", "distribution manager", "warehouse associate", "fulfillment associate", "manager", "team lead", "supervisor", "regional manager", "operations manager", "general manager", "project manager", "representative", "rep", "account rep", "field representative", "brand ambassador", "territory rep", "area manager", "store manager", "customer service", "client services", "customer support", "helpdesk", "relationship executive", "service advisor", "volunteer", "intern", "internship", "work experience", "apprentice", "apprenticeship", "contractor", "contract role", "temp", "temporary role", "freelance", "freelancer", "seasonal"]
+
 runtime:
   headless: false # Set to false for visibility
   accept_cookies_selector: 'button[action-type="ACCEPT"]'

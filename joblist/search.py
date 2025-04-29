@@ -32,6 +32,15 @@ EXPERIENCE_MAP = {
     "director": "5",
     "executive": "6"
 }
+
+JOB_TYPE_MAP = {
+    "full_time": "F",
+    "part_time": "P",
+    "contract": "C",
+    "temporary": "T",
+    "volunteer": "V",
+    "internship": "I"
+}
 # --- End Mappings ---
 
 
@@ -136,8 +145,13 @@ def construct_search_url(profile: dict, profile_name: str | None = None) -> str:
     if exp_param:
          params['f_E'] = exp_param
 
+    # --- Job Type Filter (f_JT) ---
+    job_type_param = _build_filter_param('job_type', JOB_TYPE_MAP, filters, allow_multiple=True)
+    if job_type_param:
+        params['f_JT'] = job_type_param
+        logger.info(f"Added job type filter: f_JT={job_type_param}")
+
     # --- Other potential filters (add as needed based on config/plan) ---
-    # Example: Job Type (f_JT) - map "full-time", "part-time" etc.
     # Example: Company (f_C) - needs company IDs?
 
     # --- Static Parameters ---

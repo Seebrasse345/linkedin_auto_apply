@@ -100,7 +100,7 @@ class ApplicationWizard:
 
             # Process the application form steps
             step_count = 0
-            max_steps = 15  # Safety limit
+            max_steps = 8  # Safety limit
             previous_form_content = None  # Track previous form content to detect loops
             duplicate_form_count = 0  # Count how many times we see the same form
             max_duplicates = 3  # Maximum number of times to try the same form before giving up
