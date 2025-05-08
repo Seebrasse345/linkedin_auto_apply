@@ -10,14 +10,14 @@ This application requires an OpenAI API key to be set as an environment variable
    
    Open a PowerShell window and run:
    ```powershell
-   $env:OPENAI_API_KEY = "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"
+
    ```
 
 2. **Setting the environment variable permanently (for future sessions)**:
    
    Run the following in PowerShell with administrator privileges:
    ```powershell
-   [Environment]::SetEnvironmentVariable("OPENAI_API_KEY", "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", "User")
+
    ```
 
    Or through the Windows GUI:
@@ -26,7 +26,8 @@ This application requires an OpenAI API key to be set as an environment variable
    3. Click "Environment Variables..." button
    4. Under "User variables", click "New..."
    5. Set Variable name: `OPENAI_API_KEY`
-   6. Set Variable value: `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`
+   6. Set Variable value: `your-openai-api-key-goes-here`
+
    7. Click "OK" on all windows
 
 ### Security Note
