@@ -3,7 +3,7 @@ credentials:
   password: Bakumonsuno45!
 search_profiles:
 - name: graduate-data-uk
-  query: Data
+  query: Machine Learning, Devops, AI, Python, Data
   location: United Kingdom
   geoId: 101165590
   filters:
@@ -11,13 +11,10 @@ search_profiles:
     date_posted: past_24h
     remote:
     - remote
-    - hybrid
-    experience:
-    - entry_level
-    - associate
+    experience: []
     job_type:
     - full_time
-    low_number_applicants: true
+    low_number_applicants: false
     auto_easy: false
     auto_recommend: false
 banned_words:
@@ -25,6 +22,16 @@ banned_words:
 - support
 - executive
 - officer
+- maintance
+- service
+- chemist
+- recruitment
+- accountant
+- pharma
+- pharmacy
+- bio
+- biology
+- policy
 - talent
 - specialist
 - representative
@@ -54,6 +61,8 @@ banned_words:
 - post-sales
 - lead generation
 - customer acquisition
+- estimator
+- surveyor
 - territory manager
 - client acquisition
 - relationship manager

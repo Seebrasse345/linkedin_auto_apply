@@ -31,6 +31,33 @@ class TextInputProcessor(FieldProcessor):
             bool: True if processing succeeded, False otherwise
         """
         field_label = self.get_field_label(input_element)
+        input_id = input_element.get_attribute("id")
+
+        # Check for the specific Home Address City field
+        # The ID "single-typeahead-entity-form-component-formElement-urn-li-jobs-applyformcommon-easyApplyFormElement-4170832850-7558611383530654713-city-HOME-CITY"
+        # is too specific and might change. We look for a more general part.
+        if input_id and "city-HOME-CITY" in input_id and field_label.lower() == "city":
+            try:
+                logger.info(f"Auto-filling Home Address City field ('{field_label}') with 'Sheffield, England, United Kingdom'")
+                input_element.click() # Ensure focus
+                input_element.fill("") # Explicitly clear the field first
+                # Type the string character by character with a small delay
+                input_element.type("Sheffield, England, United Kingdom", delay=40) # delay in ms
+                
+                # Wait a moment for the field to process the input, especially if there's typeahead JS
+                input_element.page.wait_for_timeout(600) 
+
+                # Log the current value to see if the full string was entered before pressing Enter
+                current_value = input_element.input_value()
+                logger.info(f"Value in Home Address City field before pressing Enter: '{current_value}'")
+
+                input_element.press("Enter")
+                logger.info("Pressed Enter after attempting to fill Home Address City.")
+                return True
+            except PlaywrightError as e:
+                logger.error(f"Error auto-filling Home Address City field '{field_label}': {e}")
+                return False
+
         answer = get_answer_for_field(answers, field_label)
         
         # Special handling for years of experience questions in text fields

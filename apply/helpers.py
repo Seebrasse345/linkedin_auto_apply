@@ -6,6 +6,7 @@ import re
 import os
 import json
 import logging
+from datetime import datetime
 from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,61 @@ def save_application_result(data_dir: str, job_id: str, success: bool) -> None:
         logger.info(f"Updated {result_type} applications list with Job ID: {job_id} (total: {len(existing_results)})")
     else:
         logger.info(f"Job ID: {job_id} already in {result_type} applications list")
+
+
+def save_job_description(data_dir: str, job_data: dict) -> None:
+    """Save job description to a JSON file for successful applications.
+    
+    Args:
+        data_dir: Directory to save the job descriptions file
+        job_data: Job data containing title, company, and description
+    """
+    filename = "job_descriptions_applied.json"
+    filepath = os.path.join(data_dir, filename)
+    
+    # Create data directory if it doesn't exist
+    os.makedirs(data_dir, exist_ok=True)
+    
+    # Extract relevant job information
+    job_id = job_data.get("job_id", job_data.get("id", "unknown"))
+    job_title = job_data.get("title", "Unknown Title")
+    job_company = job_data.get("company", "Unknown Company")
+    job_description = job_data.get("description", "")
+    
+    # Prepare the entry to save
+    job_entry = {
+        "job_id": job_id,
+        "title": job_title,
+        "company": job_company,
+        "description": job_description,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # Load existing entries or create new list
+    existing_entries = []
+    try:
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as file:
+                existing_entries = json.load(file)
+                if not isinstance(existing_entries, list):
+                    existing_entries = []
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Error loading existing job descriptions: {e}. Creating new file.")
+        existing_entries = []
+    
+    # Check if job ID already exists in the list
+    job_ids = [entry.get("job_id") for entry in existing_entries]
+    
+    # Add new entry only if job ID is not already in the list
+    if job_id not in job_ids:
+        existing_entries.append(job_entry)
+        
+        with open(filepath, 'w') as file:
+            json.dump(existing_entries, file, indent=2)
+        
+        logger.info(f"Saved job description for {job_title} at {job_company} (ID: {job_id})")
+    else:
+        logger.info(f"Job description for ID: {job_id} already saved")
 
 def should_auto_answer(field_label: str, options: List[str]) -> bool:
     """Determine if we should auto-answer this question instead of prompting."""

@@ -19,7 +19,7 @@ from .constants import (
     DONE_BUTTON_SELECTOR,
     APPLICATION_MODAL_SELECTOR
 )
-from .helpers import load_answers, save_answers, save_application_result
+from .helpers import load_answers, save_answers, save_application_result, save_job_description
 from .form_processor import FormProcessor
 
 logger = logging.getLogger(__name__)
@@ -54,9 +54,15 @@ class ApplicationWizard:
         """Save application data to JSON files."""
         # Save successful applications
         for app in self.successful_applications:
-            job_id = app.get("job", {}).get("id", "unknown")
-            job_id = job_id if job_id != "unknown" else app.get("job", {}).get("job_id", "unknown")
+            job_data = app.get("job", {})
+            job_id = job_data.get("id", "unknown")
+            job_id = job_id if job_id != "unknown" else job_data.get("job_id", "unknown")
+            
+            # Save to successful_applications.json
             self._save_application_result(job_id, True)
+            
+            # Save job description to job_descriptions_applied.json
+            save_job_description(self.data_dir, job_data)
             
         # Save failed applications
         for app in self.failed_applications:

@@ -13,27 +13,22 @@ from typing import Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 # OpenAI API Configuration
-# Store API key in an environment variable or config file for better security in production
 def get_openai_api_key() -> str:
-    """Get the OpenAI API key from environment or config.
-    
-    In the future, this could be enhanced to retrieve from a secure environment variable or config file.
+    """Get the OpenAI API key from the environment variable.
     
     Returns:
-        str: OpenAI API key
+        str: OpenAI API key, or None if not found.
     """
-    # Hardcoded for now - this is a placeholder and should be replaced with proper security later
-    # In a production environment, this would be a major security issue
-    # Using the old key provided
-    api_key = "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"
+    api_key = os.environ.get("OPENAI_API_KEY")
     
-    # Log the first and last few characters for debugging, NEVER log the full key
     if api_key:
+        # Log the first and last few characters for debugging, NEVER log the full key
         safe_key_preview = f"{api_key[:5]}...{api_key[-5:]}"
         logger.info(f"Using OpenAI API key: {safe_key_preview}")
     else:
-        logger.error("No OpenAI API key available")
-        
+        logger.error("OPENAI_API_KEY not found in environment variables.")
+        print("\n[APPLICATION FORM] Error: No OpenAI API key found. Please set the OPENAI_API_KEY environment variable.")
+    
     return api_key
 
 OPENAI_MODEL = "gpt-4.1-2025-04-14"
