@@ -36,7 +36,7 @@ def get_openai_api_key() -> str:
 OPENAI_MODEL = "gpt-4o"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MAX_TOKENS = 1000
-OPENAI_TEMPERATURE = 0.8
+OPENAI_TEMPERATURE = 0.9
 
 def read_cv() -> str:
     """
