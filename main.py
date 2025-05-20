@@ -1,5 +1,8 @@
 import logging
 import time
+import sys
+import os
+from tkinter import messagebox
 from playwright.sync_api import sync_playwright, Page, Playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError # More specific import
 from pathlib import Path # Added for ROOT_PATH calculation
@@ -157,21 +160,28 @@ def main():
                 logger.warning(f"Answers file not found at {answers_path}. Some features might not work as expected.")
 
 
+            # Define a flag to check if application limit was reached
+            application_limit_reached = False
+            
             for profile_config in search_profiles:
+                if application_limit_reached:
+                    logger.info("Skipping remaining profiles due to application limit being reached.")
+                    break
+                    
                 profile_name = profile_config.get('name', 'Unnamed Profile')
                 original_query_string = profile_config.get('query', '')
                 
+                # Allow empty queries - they'll be handled by search.py
                 if not original_query_string:
-                    logger.warning(f"Profile '{profile_name}' has an empty 'query' field. Skipping.")
-                    profile_results[profile_name] = False
-                    continue
-
-                search_terms = [term.strip() for term in original_query_string.split(',') if term.strip()]
-
-                if not search_terms:
-                    logger.warning(f"Profile '{profile_name}' has no valid search terms after parsing query: '{original_query_string}'. Skipping.")
-                    profile_results[profile_name] = False
-                    continue
+                    logger.info(f"Profile '{profile_name}' has an empty 'query' field. Will search by location only.")
+                    search_terms = [''] # Use a single empty term for location-only search
+                else:
+                    search_terms = [term.strip() for term in original_query_string.split(',') if term.strip()]
+                    
+                    # If all terms were just whitespace, use a single empty term
+                    if not search_terms:
+                        logger.info(f"Profile '{profile_name}' has only whitespace in query: '{original_query_string}'. Will search by location only.")
+                        search_terms = ['']
                 
                 logger.info(f"Processing profile '{profile_name}' with search terms: {search_terms}")
                 
@@ -184,8 +194,22 @@ def main():
                     term_specific_profile = profile_config.copy()
                     term_specific_profile['query'] = current_term # Set the specific query for this run
                     
-                    # run_profile_search now returns a list of job data or None
-                    job_data_list_for_term = run_profile_search(page, term_specific_profile, config)
+                    try:
+                        # run_profile_search now returns a list of job data or None
+                        job_data_list_for_term = run_profile_search(page, term_specific_profile, config)
+                    except SystemExit as e:
+                        # Catch the sys.exit(100) from scroll_loader.py
+                        if e.code == 100:
+                            logger.critical("LinkedIn Easy Apply application limit reached. Terminating the application process.")
+                            application_limit_reached = True
+                            messagebox.showwarning("Application Limit Reached", 
+                                                 "You've reached the LinkedIn Easy Apply application limit for today.\n\n"
+                                                 "LinkedIn allows a limited number of Easy Apply applications per day.\n"
+                                                 "Please try again tomorrow.")
+                            break
+                        else:
+                            # For other exit codes, re-raise
+                            raise
 
                     if job_data_list_for_term is not None and job_data_list_for_term: # Check for non-None and non-empty list
                         logger.info(f"Found {len(job_data_list_for_term)} jobs for term '{current_term}'. Initializing application process...")
@@ -256,6 +280,13 @@ def main():
         # Already logged in the authentication block
         logger.error(f"Runtime error: {e}")
         exit_code = 1
+    except SystemExit as e:
+        if e.code == 100:
+            logger.critical("LinkedIn Easy Apply application limit reached. Terminating the application process.")
+            exit_code = 100
+        else:
+            # Re-raise other SystemExit exceptions
+            raise
     except Exception as e:
         logger.error(f"CRITICAL: An unexpected error occurred in the main process: {e}", exc_info=True)
         exit_code = 1

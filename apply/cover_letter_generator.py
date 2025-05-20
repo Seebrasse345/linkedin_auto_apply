@@ -12,6 +12,8 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_EXTRA_INFORMATION = "Extra information user is Male, age 23, has BSc physics, living in Sheffield, England, United Kingdom, for years of experience quesitons use heuristics and CV information if not default to 2. For more generic questions like why do you want the role answer appropriately proffessionally using the CV and job description in full \n"
+
 # OpenAI API Configuration
 def get_openai_api_key() -> str:
     """Get the OpenAI API key from the environment variable.
@@ -44,8 +46,9 @@ def read_cv() -> str:
         str: The CV content as text
     """
     try:
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        cv_path = os.path.join(base_dir, 'cv.txt')
+        # Correctly determine the base directory (apply) and then project_root
+        base_dir = os.path.dirname(os.path.abspath(__file__)) # This is 'apply' directory
+        cv_path = os.path.join(base_dir, 'cv.txt') # cv.txt is in 'apply' directory
         
         with open(cv_path, 'r', encoding='utf-8') as file:
             cv_content = file.read()
@@ -232,6 +235,27 @@ Sincerely,
     
     return cover_letter
 
+def load_extra_information() -> str:
+    """Loads extra information from the AI prompt settings file."""
+    try:
+        # Determine the project root from the current file's directory
+        current_file_dir = os.path.dirname(os.path.abspath(__file__)) # 'apply' directory
+        project_root = os.path.dirname(current_file_dir) # Project root
+        settings_path = os.path.join(project_root, 'data', 'ai_prompt_settings.json')
+        
+        if not os.path.exists(settings_path):
+            logger.warning(f"AI prompt settings file not found at {settings_path}. Using default extra information.")
+            return DEFAULT_EXTRA_INFORMATION
+
+        with open(settings_path, 'r', encoding='utf-8') as f:
+            settings = json.load(f)
+        loaded_info = settings.get("extra_information", DEFAULT_EXTRA_INFORMATION)
+        logger.info("Successfully loaded extra information from AI prompt settings.")
+        return loaded_info
+    except Exception as e:
+        logger.error(f"Failed to load extra information from {settings_path}: {e}. Using default.")
+        return DEFAULT_EXTRA_INFORMATION
+
 def answer_generator(question: str, field_type: str = None, job_data: Dict[str, Any] = None) -> str:
     """Generate an answer for an Easy Apply question based on past answers, CV, and job data.
     
@@ -263,7 +287,7 @@ def answer_generator(question: str, field_type: str = None, job_data: Dict[str, 
         filtered_past_answers.append(f"{key}: {value}")
     # only take top 5% of the list
     filtered_past_answers = filtered_past_answers[:len(filtered_past_answers) // 20]
-    
+    extra_information = load_extra_information()
     system_message = (
         "You are an expert assistant for selecting the correct numeric option for LinkedIn Easy Apply questions.\n"
         "You are given the user's past answers to similar linkedin questions in JSON format and the user's CV You must use this information to select the best option.\n"
@@ -273,8 +297,8 @@ def answer_generator(question: str, field_type: str = None, job_data: Dict[str, 
         "IF THE QUESTION IS A TEXT FIELD QUESTION THAT IS NOT A SELECT QUESTION AND IS OF THE LIKES of Why inspired you to apply etc DO NOT SELECT a number option instead write a proffesional answer using the CV and job description in full THIS IS THE ONLY CASE YOU SHOULD RETURN A TEXT ANSWER IF NUMERICAL MULTIPLE CHOISE options e.g 1. 2. 3. or 1.Yes 2.NO etc are AVAILABLE NEVER WRITE TEXT.\n"
         "DO NOT REPEAT THE AVAILABLE OPTIONS IN YOUR OUTPUT. Some extra information for the more critical options NO driving license, Has British passports is a british citizen , IS WILLING TO GET A SECURITY CLEARANCE HOWEVER DOES NOT POSSESS ONE HAS POSSESSED ONE AND NO ACTIVE ONE BUT WILLING TO always willing to commute, ALWAYS COMFORTABLE WITH WORKING ANYWHERE etc \n"
         " IF IT IS A SIMPLE QUESTION ANSWER IN A SIMPLE WAY NO NEED TO MAKE IT COMPLICATED FOR example do you have a  non-compete should just be a no or under 5-10 words\n"
-        " If the question is like Headline just give a cover letter headline BE CONSICE ON SIMPLE QUESTIONS\n"
-        "Extra information user is Male, age 23, has BSc physics, living in Sheffield, England, United Kingdom, for years of experience quesitons use heuristics and CV information if not default to 2. For more generic questions like why do you want the role answer appropriately proffessionally using the CV and job description in full \n"
+        " If the question is like Headline just give a cover letter headline BE CONSICENCE ON SIMPLE QUESTIONS\n"
+        f"{extra_information}\n"
         f"Here are the user's past answers in JSON format: {json.dumps(filtered_past_answers)}\n\n"
         f"Here is the USER'S CV:\n{cv_content}\n\n"
     )

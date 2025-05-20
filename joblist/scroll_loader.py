@@ -4,6 +4,7 @@ import random
 import re
 import os
 import json
+import sys
 from playwright.sync_api import Page, Locator, Error as PlaywrightError
 from typing import List, Dict, Set, Optional
 from apply import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
@@ -36,10 +37,10 @@ JOB_LIST_SELECTOR = 'ul.jobs-search-results__list, div.jobs-search-results-list'
 SCROLL_INCREMENT = 3  # Scroll every Nth card (increased for faster scrolling)
 MAX_SCROLL_ATTEMPTS = 20 # Max scroll attempts to prevent infinite loops (reduced from 30)
 SCROLL_STABILITY_CHECKS = 2 # Stop if DOM count is stable for this many checks (reduced from 3)
-POST_SCROLL_DELAY_MS = 400 # Delay after each scroll_into_view (reduced from 800ms)
+POST_SCROLL_DELAY_MS = 600 # Delay after each scroll_into_view (increased from 400ms)
 EXTRACT_TIMEOUT_MS = 2500 # Timeout for extracting text/attributes from elements (reduced from 3000ms)
 QUICK_EXTRACT_TIMEOUT_MS = 800 # Faster timeout for individual fields (reduced from 1000ms)
-INITIAL_WAIT_MS = 1000 # Wait briefly for initial cards to appear (reduced from 1500ms)
+INITIAL_WAIT_MS = 1500 # Wait briefly for initial cards to appear (increased from 1000ms)
 
 # --- Selectors --- 
 # For the Job List Items (Scrolling & Clicking)
@@ -52,12 +53,59 @@ DETAILS_PANE_EASY_APPLY_BUTTON_SELECTOR = 'button.jobs-apply-button span.artdeco
 DETAILS_PANE_APPLY_BUTTON_SELECTOR = 'button.jobs-apply-button'
 
 # --- Settings --- 
-POST_CLICK_DELAY_MS = 500 # Wait after clicking a card for pane to load (reduced from 1000ms)
+POST_CLICK_DELAY_MS = 1500 # Wait after clicking a card for pane to load (increased from 750ms, originally 500ms, baseline might have been 1000ms)
 
 # File paths for previously processed applications
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
 SUCCESSFUL_APPLICATIONS_FILE = os.path.join(DATA_DIR, 'successful_applications.json')
 FAILED_APPLICATIONS_FILE = os.path.join(DATA_DIR, 'failed_applications.json')
+
+# LinkedIn application limit message detection
+APPLICATION_LIMIT_MESSAGE = "You've reached the Easy Apply application limit for today"
+APPLICATION_LIMIT_SPAN_SELECTOR = "span.artdeco-inline-feedback__message"
+
+def detect_application_limit(page: Page) -> bool:
+    """
+    Detects if LinkedIn's Easy Apply application limit message is present on the page.
+    
+    Args:
+        page: The Playwright Page object.
+        
+    Returns:
+        bool: True if application limit is reached, False otherwise.
+    """
+    try:
+        # Check the exact span element where LinkedIn shows the limit message
+        limit_message_spans = page.locator(APPLICATION_LIMIT_SPAN_SELECTOR).all()
+        for span in limit_message_spans:
+            try:
+                text = span.inner_text(timeout=1000)
+                if APPLICATION_LIMIT_MESSAGE in text:
+                    logger.critical(f"DETECTED APPLICATION LIMIT MESSAGE IN SPAN: '{text}'")
+                    return True
+            except Exception:
+                continue
+        
+        # As a backup, check if any Easy Apply button is disabled (might indicate limit reached)
+        disabled_buttons = page.locator("button.jobs-apply-button[disabled]")
+        if disabled_buttons.count() > 0:
+            # If we find a disabled button, check nearby elements for the limit message
+            try:
+                # Look for any error message or feedback near the disabled button
+                for button in disabled_buttons.all():
+                    # Get the parent container and check its text
+                    container = button.locator('xpath=../..')
+                    container_text = container.inner_text(timeout=1000)
+                    if APPLICATION_LIMIT_MESSAGE in container_text:
+                        logger.critical(f"DETECTED APPLICATION LIMIT MESSAGE NEAR DISABLED BUTTON: '{container_text}'")
+                        return True
+            except Exception as e:
+                logger.warning(f"Error checking disabled button context: {e}")
+        
+        return False
+    except Exception as e:
+        logger.warning(f"Error in detect_application_limit: {e}")
+        return False
 
 def extract_job_id_from_url(url: str) -> str | None:
     """Helper to extract job ID from common LinkedIn job URL patterns."""
@@ -224,6 +272,8 @@ def load_all_job_cards(page: Page):
 
     # --- Extraction Phase (Click Card -> Extract from Details Pane) --- 
     try:
+        # We'll check for application limit after clicking the Easy Apply button instead
+            
         # Re-locate all cards after scrolling is finished
         all_cards = page.locator(JOB_CARD_SELECTOR).all()
         final_card_count = len(all_cards)
@@ -264,6 +314,14 @@ def load_all_job_cards(page: Page):
                 card.click() # Potential race condition if page refreshes?
                 logger.debug(f"  Card {i+1}: Waiting {POST_CLICK_DELAY_MS}ms for details pane to potentially load...")
                 page.wait_for_timeout(POST_CLICK_DELAY_MS)
+                
+                # Check for application limit message after clicking card
+                # This is especially important if clicking the card leads directly to a limit message
+                if detect_application_limit(page):
+                    logger.critical("APPLICATION LIMIT REACHED AFTER CLICKING JOB CARD! Terminating application process.")
+                    sys.exit(100)
+                
+                # We'll check for application limit after clicking the Easy Apply button instead
                 
                 # 3. Wait for a key element in the details pane (e.g., title) to confirm load
                 logger.debug(f"  Card {i+1}: Waiting for details pane title selector: '{DETAILS_PANE_TITLE_SELECTOR}'")
@@ -391,8 +449,56 @@ def load_all_job_cards(page: Page):
                         if easy_apply_button.count() > 0:
                             # Use first() to handle multiple matching elements
                             logger.info(f"    Clicking Easy Apply button for Job ID: {job_id}")
-                            easy_apply_button.first.click(timeout=3000)  # Reduced timeout from 5000ms
-                            page.wait_for_timeout(1500)  # Wait for form to load (reduced from 2000ms)
+                            try:
+                                easy_apply_button.first.click(timeout=3000)  # Reduced timeout from 5000ms
+                                page.wait_for_timeout(1500)  # Wait for form to load (reduced from 2000ms)
+                                
+                                # Check for application limit after successful click
+                                if detect_application_limit(page):
+                                    logger.critical("APPLICATION LIMIT REACHED AFTER CLICKING EASY APPLY! Terminating application process.")
+                                    # Exit with a special code that can be detected by the main application
+                                    sys.exit(100)  # Using 100 as a special exit code for application limit reached
+                            except PlaywrightError as click_error:
+                                # If click fails, check if it's because the button is disabled due to reaching limit
+                                logger.warning(f"Easy Apply button click failed: {click_error}")
+                                
+                                # This is critical - check for limit message after click failure
+                                if "disabled" in str(click_error) or "not enabled" in str(click_error):
+                                    logger.info("Button appears to be disabled. Checking for application limit message...")
+                                    
+                                    # First check with our standard detection
+                                    if detect_application_limit(page):
+                                        logger.critical("APPLICATION LIMIT REACHED! Button disabled. Terminating application process.")
+                                        sys.exit(100)
+                                    
+                                    # Additional check: inspect the page body text for the limit message
+                                    try:
+                                        page_text = page.evaluate('() => document.body.innerText')
+                                        if APPLICATION_LIMIT_MESSAGE in page_text:
+                                            logger.critical("APPLICATION LIMIT REACHED! Found in page body text. Terminating application process.")
+                                            sys.exit(100)
+                                    except Exception as e:
+                                        logger.warning(f"Error checking page body text: {e}")
+                                    
+                                    # One more attempt - if the button is disabled and we can't find jobs-apply text elsewhere,
+                                    # it's highly likely we've hit the limit
+                                    try:
+                                        # Check if we can explicitly find the span with limit message
+                                        if page.locator(APPLICATION_LIMIT_SPAN_SELECTOR).count() > 0:
+                                            logger.critical("APPLICATION LIMIT REACHED! Found limit message span. Terminating.")
+                                            sys.exit(100)
+                                        
+                                        # Check the overall job card or parent containers for any text indicating limit
+                                        job_card = page.locator(".job-card-container, .jobs-details, .jobs-search-results-list__list-item")
+                                        if job_card.count() > 0:
+                                            card_text = job_card.first.inner_text(timeout=1000)
+                                            if APPLICATION_LIMIT_MESSAGE in card_text:
+                                                logger.critical("APPLICATION LIMIT REACHED! Found in job card. Terminating.")
+                                                sys.exit(100)
+                                    except Exception as e:
+                                        logger.warning(f"Error performing additional limit checks: {e}")
+                                # Re-raise the original error to be caught by the outer try-except
+                                raise
                             
                             # Set flag indicating button was already clicked
                             job_details['easy_apply_clicked'] = True
@@ -480,6 +586,8 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
         bool: True if all pages have been processed (no more pages), False if navigated to a new page.
     """
     try:
+        # We'll check for application limit after clicking the Easy Apply button instead
+            
         logger.info("Checking for pagination on current page...")
         # Ensure we're on the main job search page first, not in an application form
         try:

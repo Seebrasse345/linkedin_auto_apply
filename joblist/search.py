@@ -12,10 +12,10 @@ DISTANCE_KM_MAP = {
 }
 
 DATE_POSTED_MAP = {
-    "past_24h": "r86400",
-    "past_week": "r604800",
-    "past_month": "r2592000", # Assuming 30 days
-    "any_time": None # Parameter omitted for any_time
+    "Past 24 hours": "r86400",
+    "Past Week": "r604800",
+    "Past Month": "r2592000", # Assuming 30 days
+    "Any Time": None # Parameter omitted for any_time
 }
 
 REMOTE_MAP = {
@@ -97,16 +97,24 @@ def construct_search_url(profile: dict, profile_name: str | None = None) -> str:
     # Continue with regular URL construction if direct collections not requested
     base_url = "https://www.linkedin.com/jobs/search/"
 
-    required_keys = ['query', 'location', 'geoId']
+    # Check for location and geoId, which are still required
+    required_keys = ['location', 'geoId']
     if not all(key in profile for key in required_keys):
         missing = [key for key in required_keys if key not in profile]
         logger.warning(f"Search profile '{profile_name}' is missing required keys: {missing}")
         return None
+        
+    # Query is optional now - it can be empty (the key still needs to exist though)
+    if 'query' not in profile:
+        logger.warning(f"Search profile '{profile_name}' is missing 'query' key. Using empty query.")
+        profile['query'] = ''
 
     params = {}
 
     # --- Core Search Terms ---
-    params['keywords'] = profile['query']
+    # Only add the keywords parameter if query is not empty
+    if profile['query'].strip():
+        params['keywords'] = profile['query']
     params['location'] = profile['location'] # Location string might be sufficient
     params['geoId'] = profile['geoId'] # Use configured Geo ID
 
@@ -128,12 +136,22 @@ def construct_search_url(profile: dict, profile_name: str | None = None) -> str:
 
     # --- Date Posted Filter ---
     date_posted_filter = filters.get('date_posted')
-    if date_posted_filter and date_posted_filter != "any_time":
-         time_param = DATE_POSTED_MAP.get(date_posted_filter)
-         if time_param:
-             params['f_TPR'] = time_param
-         else:
-             logger.warning(f"Unsupported date_posted value: {date_posted_filter}. Omitting date filter.")
+    if date_posted_filter:
+        if date_posted_filter == "custom_hours":
+            custom_hours = filters.get('date_posted_custom_hours_value')
+            if isinstance(custom_hours, int) and 1 <= custom_hours <= 23:
+                seconds = custom_hours * 3600
+                params['f_TPR'] = f"r{seconds}"
+                logger.info(f"Applying custom date posted filter: {custom_hours} hours ({seconds} seconds)")
+            else:
+                logger.warning(f"Invalid 'date_posted_custom_hours_value': {custom_hours}. Omitting date filter.")
+        elif date_posted_filter != "Any Time": # Existing logic for predefined non-custom, non-anytime values
+            time_param = DATE_POSTED_MAP.get(date_posted_filter)
+            if time_param:
+                params['f_TPR'] = time_param
+            else:
+                logger.warning(f"Unsupported date_posted value: {date_posted_filter}. Omitting date filter.")
+        # If 'Any Time', f_TPR is correctly omitted by this logic
 
     # --- Remote Filter (f_WT) ---
     remote_param = _build_filter_param('remote', REMOTE_MAP, filters, allow_multiple=True)

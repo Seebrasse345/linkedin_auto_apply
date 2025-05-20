@@ -3,28 +3,76 @@ credentials:
   password: Bakumonsuno45!
 search_profiles:
 - name: graduate-data-uk
-  query: Machine Learning, Devops, AI, Python, Data
+  query: Software,Data,AI,Devops,Machine Learning,Automation,Developer,Python,graduate,junior
   location: United Kingdom
   geoId: 101165590
   filters:
     distance_km: 15
-    date_posted: past_24h
+    date_posted: custom_hours
     remote:
     - remote
-    experience: []
+    - hybrid
+    experience:
+    - entry_level
+    - associate
     job_type:
     - full_time
     low_number_applicants: false
     auto_easy: false
-    auto_recommend: false
+    auto_recommend: true
+    date_posted_custom_hours_value: 7
 banned_words:
 - business
 - support
 - executive
+- product
+- english
+- HR
+- teacher
+- teaching
+- Human
+- invoice
+- inspector
+- surveyor
+- construction
+- surveyor
+- report
+- Resources
+- Planning
+- Costing
+- Employment
+- Solicitor
+- Support
+- Technician
+- BC
+- Platform
+- Lift
+- tutor
+- manager
+- protection
+- specialist
+- market
+- wealth
+- finance
+- commercial
+- lawyer
+- experience
+- operative
+- assurance
+- collections
 - officer
+- recruiter
+- recruit
+- officer
+- principal
+- technical
+- leading
 - maintance
 - service
+- lead
 - chemist
+- senior
+- executive
 - recruitment
 - accountant
 - pharma
@@ -33,7 +81,6 @@ banned_words:
 - biology
 - policy
 - talent
-- specialist
 - representative
 - speaker
 - communication
@@ -76,7 +123,6 @@ banned_words:
 - performance marketing
 - digital marketing
 - social media
-- seo specialist
 - sem specialist
 - campaign manager
 - email marketing

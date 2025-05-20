@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from typing import Dict, Any, Optional
-from playwright.sync_api import Locator, Error as PlaywrightError
+from playwright.sync_api import Locator, Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError
 
 from .base import FieldProcessor
 from ..helpers import get_answer_for_field, save_answers
@@ -38,24 +38,76 @@ class TextInputProcessor(FieldProcessor):
         # is too specific and might change. We look for a more general part.
         if input_id and "city-HOME-CITY" in input_id and field_label.lower() == "city":
             try:
-                logger.info(f"Auto-filling Home Address City field ('{field_label}') with 'Sheffield, England, United Kingdom'")
+                logger.info(f"Attempting to fill Home Address City field ('{field_label}') with 'Sheffield, England, United Kingdom' by selecting suggestion.")
                 input_element.click() # Ensure focus
                 input_element.fill("") # Explicitly clear the field first
-                # Type the string character by character with a small delay
-                input_element.type("Sheffield, England, United Kingdom", delay=40) # delay in ms
                 
-                # Wait a moment for the field to process the input, especially if there's typeahead JS
-                input_element.page.wait_for_timeout(600) 
+                logger.info("Typing 'Sheffield' into Home Address City field to trigger autocomplete...")
+                # Type only 'Sheffield' to trigger suggestions, with a slight delay for each character
+                input_element.type("Sheffield", delay=75) 
+                
+                suggestion_text = "Sheffield, England, United Kingdom"
+                suggestion_element = None
+                
+                # Common CSS selectors for autocomplete suggestions. These are tried in order.
+                suggestion_locator_css_options = [
+                    f'li[role="option"]:has-text("{suggestion_text}")',
+                    f'div[role="option"]:has-text("{suggestion_text}")',
+                    f'p:has-text("{suggestion_text}")',
+                    f'span:has-text("{suggestion_text}")',
+                    f'*[role="listbox"] li:has-text("{suggestion_text}")',
+                    f'*[role="listbox"] div:has-text("{suggestion_text}")',
+                    f':text-matches("^{suggestion_text}$")' # Playwright specific :text-matches for exact match
+                ]
 
-                # Log the current value to see if the full string was entered before pressing Enter
+                # Iterate through selectors to find the suggestion element
+                for i, css_selector in enumerate(suggestion_locator_css_options):
+                    try:
+                        logger.debug(f"Home Address City: Trying suggestion selector {i+1}/{len(suggestion_locator_css_options)}: {css_selector}")
+                        # Scope locator to the page, as dropdowns might not be direct children or could be in portals
+                        located_element = input_element.page.locator(css_selector).first
+                        # Wait for the element to be visible, with a timeout for each attempt
+                        located_element.wait_for(state="visible", timeout=1500) # 1.5 sec timeout for each selector
+                        suggestion_element = located_element
+                        logger.info(f"Home Address City: Suggestion '{suggestion_text}' found and visible with: {css_selector}")
+                        break 
+                    except PlaywrightTimeoutError:
+                        logger.debug(f"Home Address City: Timeout waiting for suggestion with selector: {css_selector}")
+                    except Exception as e_loc_suggestion:
+                        logger.warning(f"Home Address City: Error with selector {css_selector}: {str(e_loc_suggestion)[:100]}") # Log snippet of error
+                
+                if suggestion_element:
+                    logger.info(f"Home Address City: Clicking suggestion '{suggestion_text}'.")
+                    suggestion_element.click()
+                    input_element.page.wait_for_timeout(750) # Wait for click to process and field to update
+                else:
+                    logger.warning(f"Home Address City: Suggestion '{suggestion_text}' not found or not visible after trying all selectors. Falling back to direct fill.")
+                    input_element.fill("Sheffield, England, United Kingdom") # Fallback to direct fill
+                    input_element.page.wait_for_timeout(500)
+
                 current_value = input_element.input_value()
-                logger.info(f"Value in Home Address City field before pressing Enter: '{current_value}'")
+                logger.info(f"Home Address City: Value in field before pressing Enter: '{current_value}'")
 
+                # It might be necessary to ensure focus is back on the input field if the click shifted it
+                input_element.focus()
                 input_element.press("Enter")
-                logger.info("Pressed Enter after attempting to fill Home Address City.")
+                logger.info("Home Address City: Pressed Enter after handling the field.")
                 return True
-            except PlaywrightError as e:
-                logger.error(f"Error auto-filling Home Address City field '{field_label}': {e}")
+            except PlaywrightError as e_pe:
+                logger.error(f"Home Address City: PlaywrightError encountered: {e_pe}")
+                # Attempt a simpler fill as a last resort if the primary method fails catastrophically
+                try:
+                    logger.info("Home Address City: Fallback - Attempting simple fill due to PlaywrightError.")
+                    input_element.fill("Sheffield, England, United Kingdom")
+                    input_element.page.wait_for_timeout(300)
+                    input_element.press("Enter")
+                    logger.info("Home Address City: Fallback - Pressed Enter after simple fill.")
+                    return True
+                except Exception as e_ff:
+                    logger.error(f"Home Address City: Fallback fill also failed: {e_ff}")
+                    return False
+            except Exception as e_gen:
+                logger.error(f"Home Address City: Unexpected error encountered: {e_gen}")
                 return False
 
         answer = get_answer_for_field(answers, field_label)
