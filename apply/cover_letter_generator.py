@@ -33,7 +33,7 @@ def get_openai_api_key() -> str:
     
     return api_key
 
-OPENAI_MODEL = "gpt-4.1-2025-04-14"
+OPENAI_MODEL = "gpt-4o"
 OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MAX_TOKENS = 1000
 OPENAI_TEMPERATURE = 0.8
