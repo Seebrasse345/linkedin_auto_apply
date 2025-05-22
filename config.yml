@@ -18,16 +18,27 @@ search_profiles:
     job_type:
     - full_time
     low_number_applicants: false
-    auto_easy: false
-    auto_recommend: true
-    date_posted_custom_hours_value: 7
+    auto_easy: true
+    auto_recommend: false
+    date_posted_custom_hours_value: 10
 banned_words:
 - business
 - support
 - executive
 - product
 - english
+- billing
+- project
+- fintech
+- finance
+- payroll
+- quant
+- quantitative
 - HR
+- quant
+- finance
+- hedge
+- fund
 - teacher
 - teaching
 - Human

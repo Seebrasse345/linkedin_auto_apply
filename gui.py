@@ -8,6 +8,9 @@ import sys
 import logging
 import json
 
+# Import job search module
+from job_search import JobSearchApp
+
 CONFIG_PATH = 'config.yml'
 MAIN_SCRIPT_PATH = 'main.py'
 AI_PROMPT_SETTINGS_PATH = os.path.join('data', 'ai_prompt_settings.json')
@@ -98,8 +101,14 @@ class AppConfigurator(tk.Tk):
         self.create_runtime_tab(notebook)
         self.create_ai_settings_tab(notebook)
 
-        self.start_button = ttk.Button(main_frame, text="Save Config & Start Bot", command=self.start_bot)
-        self.start_button.pack(pady=10)
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=10)
+
+        self.start_button = ttk.Button(button_frame, text="Save Config & Start Bot", command=self.start_bot)
+        self.start_button.pack(side=tk.LEFT, padx=5)
+        
+        self.job_search_button = ttk.Button(button_frame, text="Job Search", command=self.open_job_search)
+        self.job_search_button.pack(side=tk.LEFT, padx=5)
 
         self.load_values_from_config()
         self.load_ai_values_to_gui()
@@ -659,6 +668,14 @@ class AppConfigurator(tk.Tk):
             self.custom_hours_value_label.config(text=f"{val_int} hrs")
         except ValueError:
             self.custom_hours_value_label.config(text="-- hrs") # Fallback if value is unexpected
+    
+    def open_job_search(self):
+        """Open the job search window"""
+        try:
+            job_search_window = JobSearchApp(self)
+            job_search_window.focus_set()  # Focus on the job search window
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open job search: {str(e)}")
 
 if __name__ == "__main__":
     if not os.path.exists(CONFIG_PATH):
