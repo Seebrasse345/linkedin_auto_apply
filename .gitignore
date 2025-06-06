@@ -15,14 +15,8 @@ build/
 # Virtual environments
 venv/
 env/
-apply/cv.txt
 ENV/
-cookies/
-cookies/*
-config.yml
-data/*
-data/
-answers/default.json
+
 # IDE files
 .idea/
 .vscode/
@@ -36,6 +30,55 @@ answers/default.json
 .DS_Store
 Thumbs.db
 
+# Application specific files
+# Configuration files
+config.yml
+*.yml
+*.yaml
+
+# Data directory and all contents
+data/
+data/*
+
+# Cookies directory and all contents  
+cookies/
+cookies/*
+!cookies/.gitkeep
+
+# Answers directory and all contents
+answers/
+answers/*
+
+# CV and sensitive files
+apply/cv.txt
+cv.txt
+*.pdf
+*.doc
+*.docx
+
+# Backup files
+*.bak
+*.backup
+*.tmp
+
 # Credentials and sensitive information
 *credentials*
 *config*.json
+*secret*
+*key*
+*token*
+
+# Test outputs and temporary files
+test_output/
+temp/
+tmp/
+
+# Browser data
+browser/profiles/
+browser/downloads/
+browser/cache/
+
+# Application logs and debug files
+debug/
+logs/
+*.log.*

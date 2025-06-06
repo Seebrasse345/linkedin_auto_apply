@@ -1,3 +1,0 @@
-{
-    "extra_information": "Extra information user is Male, age 23, has BSc physics, living in Sheffield, England, United Kingdom, for years of experience quesitons use heuristics and CV information if not default to 2. For more generic questions like why do you want the role answer appropriately proffessionally using the CV and job description in full. FOR NUMERIC ANSWERS ONLY ENTER a number and nothing else AS THIS will cause input invalidtation if you enter text NOTICE PERIOD should be None or 0."
-}
