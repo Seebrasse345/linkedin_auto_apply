@@ -23,6 +23,25 @@ DONE_BUTTON_SELECTOR = "button[aria-label='Done'], button[aria-label='Dismiss'],
 # Application modal selector - narrowed to specifically target the application modal
 APPLICATION_MODAL_SELECTOR = "div.artdeco-modal__content.jobs-easy-apply-modal__content, div.jobs-easy-apply-content"
 
+# Emergency exit selectors for getting stuck applications
+CLOSE_BUTTON_SELECTOR = """
+button[aria-label="Dismiss"], 
+button[data-test-modal-close-btn], 
+button.artdeco-modal__dismiss,
+button:has(svg[data-test-icon="close-medium"]),
+svg[data-test-icon="close-medium"],
+button:has(use[href="#close-medium"]),
+button.artdeco-button--circle
+"""
+
+DISCARD_BUTTON_SELECTOR = """
+button:has-text("Discard"), 
+button[data-control-name="discard_application_confirm_btn"],
+button[data-test-dialog-secondary-btn]:has-text("Discard"),
+button.artdeco-modal__confirm-dialog-btn:has-text("Discard"),
+button.artdeco-button--secondary:has-text("Discard")
+"""
+
 # Form field selectors (scoped to the application modal)
 TEXT_INPUT_SELECTOR = "input[type='text']"
 TEXTAREA_SELECTOR = "textarea"

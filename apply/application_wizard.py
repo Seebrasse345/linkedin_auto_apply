@@ -17,7 +17,9 @@ from .constants import (
     NEXT_BUTTON_SELECTOR,
     SUBMIT_BUTTON_SELECTOR,
     DONE_BUTTON_SELECTOR,
-    APPLICATION_MODAL_SELECTOR
+    APPLICATION_MODAL_SELECTOR,
+    CLOSE_BUTTON_SELECTOR,
+    DISCARD_BUTTON_SELECTOR
 )
 from .helpers import load_answers, save_answers, save_application_result, save_job_description
 from .form_processor import FormProcessor
@@ -70,6 +72,214 @@ class ApplicationWizard:
             job_id = job_id if job_id != "unknown" else app.get("job", {}).get("job_id", "unknown")
             self._save_application_result(job_id, False)
     
+    def _emergency_exit_application(self, reason: str = "Unknown") -> bool:
+        """
+        Emergency exit procedure to close stuck applications.
+        
+        Args:
+            reason: Reason for the emergency exit
+            
+        Returns:
+            bool: True if successfully exited, False otherwise
+        """
+        logger.warning(f"Initiating emergency exit procedure: {reason}")
+        
+        try:
+            # Take a debug screenshot before attempting exit
+            try:
+                debug_dir = os.path.join(self.data_dir, 'debug')
+                os.makedirs(debug_dir, exist_ok=True)
+                screenshot_path = os.path.join(debug_dir, f"emergency_exit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                self.page.screenshot(path=screenshot_path)
+                logger.info(f"Saved emergency exit debug screenshot to {screenshot_path}")
+            except Exception as e:
+                logger.error(f"Failed to save emergency exit debug screenshot: {e}")
+            
+            # Step 1: Look for the close (X) button - try multiple strategies
+            close_success = False
+            
+            # Strategy 1: Try the comprehensive close button selector
+            try:
+                close_button = self.page.locator(CLOSE_BUTTON_SELECTOR)
+                if close_button.count() > 0:
+                    logger.info("Found close button using comprehensive selector")
+                    close_button.first.click(force=True, timeout=3000)
+                    self.page.wait_for_timeout(1500)
+                    close_success = True
+                else:
+                    logger.warning("No close button found with comprehensive selector")
+            except Exception as e:
+                logger.warning(f"Error with comprehensive close selector: {e}")
+            
+            # Strategy 2: If first strategy failed, try SVG-specific approach
+            if not close_success:
+                try:
+                    # Look for the specific SVG close icon you mentioned
+                    svg_close = self.page.locator('svg[data-test-icon="close-medium"]').first
+                    if svg_close.count() > 0:
+                        logger.info("Found SVG close icon, clicking parent button")
+                        # Click the parent button of the SVG
+                        parent_button = svg_close.locator('xpath=ancestor::button[1]')
+                        if parent_button.count() > 0:
+                            parent_button.click(force=True, timeout=3000)
+                            self.page.wait_for_timeout(1500)
+                            close_success = True
+                        else:
+                            # Try clicking the SVG directly
+                            svg_close.click(force=True, timeout=3000)
+                            self.page.wait_for_timeout(1500)
+                            close_success = True
+                except Exception as e:
+                    logger.warning(f"Error with SVG close approach: {e}")
+            
+            # Strategy 3: If still failed, try JavaScript approach
+            if not close_success:
+                try:
+                    logger.info("Attempting JavaScript-based close button click")
+                    js_result = self.page.evaluate("""
+                        () => {
+                            // Look for close buttons by multiple criteria
+                            const selectors = [
+                                'button[aria-label="Dismiss"]',
+                                'button[data-test-modal-close-btn]',
+                                'button.artdeco-modal__dismiss',
+                                'button:has(svg[data-test-icon="close-medium"])',
+                                'button.artdeco-button--circle'
+                            ];
+                            
+                            for (const selector of selectors) {
+                                try {
+                                    const elements = document.querySelectorAll(selector);
+                                    if (elements.length > 0) {
+                                        elements[0].click();
+                                        return `Success with ${selector}`;
+                                    }
+                                } catch (e) {
+                                    console.log(`Failed with ${selector}:`, e);
+                                }
+                            }
+                            
+                            // Last resort - look for any button containing close-medium SVG
+                            const svgElements = document.querySelectorAll('svg[data-test-icon="close-medium"], use[href="#close-medium"]');
+                            if (svgElements.length > 0) {
+                                const button = svgElements[0].closest('button');
+                                if (button) {
+                                    button.click();
+                                    return 'Success with SVG parent button';
+                                }
+                            }
+                            
+                            return 'No close button found';
+                        }
+                    """)
+                    
+                    if "Success" in js_result:
+                        logger.info(f"JavaScript close approach succeeded: {js_result}")
+                        self.page.wait_for_timeout(1500)
+                        close_success = True
+                    else:
+                        logger.warning(f"JavaScript close approach failed: {js_result}")
+                except Exception as e:
+                    logger.error(f"Error with JavaScript close approach: {e}")
+            
+            if not close_success:
+                logger.error("Could not find or click close button with any strategy")
+                return False
+            
+            # Step 2: Look for and click the Discard button in the confirmation dialog
+            discard_success = False
+            
+            # Wait a bit more for the discard dialog to appear
+            self.page.wait_for_timeout(1000)
+            
+            # Strategy 1: Try the comprehensive discard button selector
+            try:
+                discard_button = self.page.locator(DISCARD_BUTTON_SELECTOR)
+                if discard_button.count() > 0:
+                    logger.info("Found discard button using comprehensive selector")
+                    discard_button.first.click(force=True, timeout=3000)
+                    self.page.wait_for_timeout(1000)
+                    discard_success = True
+                else:
+                    logger.warning("No discard button found with comprehensive selector")
+            except Exception as e:
+                logger.warning(f"Error with comprehensive discard selector: {e}")
+            
+            # Strategy 2: Try JavaScript approach for discard button
+            if not discard_success:
+                try:
+                    logger.info("Attempting JavaScript-based discard button click")
+                    js_result = self.page.evaluate("""
+                        () => {
+                            // Look for discard buttons by multiple criteria
+                            const selectors = [
+                                'button[data-control-name="discard_application_confirm_btn"]',
+                                'button[data-test-dialog-secondary-btn]',
+                                'button.artdeco-modal__confirm-dialog-btn',
+                                'button.artdeco-button--secondary'
+                            ];
+                            
+                            for (const selector of selectors) {
+                                try {
+                                    const elements = document.querySelectorAll(selector);
+                                    for (const element of elements) {
+                                        const text = element.textContent || element.innerText || '';
+                                        if (text.toLowerCase().includes('discard')) {
+                                            element.click();
+                                            return `Success with ${selector} containing "${text}"`;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.log(`Failed with ${selector}:`, e);
+                                }
+                            }
+                            
+                            // Fallback - look for any button with "Discard" text
+                            const allButtons = document.querySelectorAll('button');
+                            for (const button of allButtons) {
+                                const text = button.textContent || button.innerText || '';
+                                if (text.toLowerCase().includes('discard')) {
+                                    button.click();
+                                    return `Success with text-based search: "${text}"`;
+                                }
+                            }
+                            
+                            return 'No discard button found';
+                        }
+                    """)
+                    
+                    if "Success" in js_result:
+                        logger.info(f"JavaScript discard approach succeeded: {js_result}")
+                        self.page.wait_for_timeout(1000)
+                        discard_success = True
+                    else:
+                        logger.warning(f"JavaScript discard approach failed: {js_result}")
+                except Exception as e:
+                    logger.error(f"Error with JavaScript discard approach: {e}")
+            
+            if not discard_success:
+                logger.warning("Could not find or click discard button - application may still be partially open")
+                # Even without discard, the close button click might have been enough
+                
+            # Step 3: Verify that we're back to the job listing
+            try:
+                self.page.wait_for_timeout(2000)  # Wait for any transitions
+                # Check if application modal is gone
+                modal = self.page.locator(APPLICATION_MODAL_SELECTOR)
+                if modal.count() == 0:
+                    logger.info("Emergency exit successful - application modal is gone")
+                    return True
+                else:
+                    logger.warning("Emergency exit may have failed - application modal still present")
+                    return False
+            except Exception as e:
+                logger.error(f"Error verifying emergency exit success: {e}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Critical error during emergency exit procedure: {e}")
+            return False
+    
     def start_application(self, job_data: Dict[str, str]) -> str:
         """Start the application process for a job.
         
@@ -109,7 +319,9 @@ class ApplicationWizard:
             max_steps = 8  # Safety limit
             previous_form_content = None  # Track previous form content to detect loops
             duplicate_form_count = 0  # Count how many times we see the same form
-            max_duplicates = 3  # Maximum number of times to try the same form before giving up
+            max_duplicates = 2  # Reduced from 3 to 2 for faster failure detection
+            stuck_detection_count = 0  # Additional counter for detecting stuck situations
+            max_stuck_attempts = 5  # Maximum attempts before considering the application stuck
             
             # Initialize the form processor
             form_processor = FormProcessor(self.page, self.answers)
@@ -121,9 +333,14 @@ class ApplicationWizard:
                 modal = self.page.locator(APPLICATION_MODAL_SELECTOR)
                 if modal.count() == 0:
                     logger.warning("Application modal not found during navigation")
+                    
+                    # Modal disappeared - this usually means we're stuck or there was an error
+                    # Try emergency exit to ensure we're back to a clean state
+                    exit_success = self._emergency_exit_application(f"Application modal disappeared at step {step_count + 1}")
+                    
                     self.failed_applications.append({
                         "job": job_data,
-                        "reason": f"Application modal disappeared at step {step_count + 1}",
+                        "reason": f"Application modal disappeared at step {step_count + 1}, emergency exit {'successful' if exit_success else 'failed'}",
                         "timestamp": datetime.now().isoformat()
                     })
                     self._save_application_data()
@@ -156,43 +373,12 @@ class ApplicationWizard:
                                     break
 
                         if not found_alternative:
-                            # Take a debug screenshot
-                            try:
-                                debug_dir = os.path.join(self.data_dir, 'debug')
-                                os.makedirs(debug_dir, exist_ok=True)
-                                screenshot_path = os.path.join(debug_dir, f"form_loop_{step_count+1}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                                self.page.screenshot(path=screenshot_path)
-                                logger.info(f"Saved debug screenshot to {screenshot_path}")
-                            except Exception as e:
-                                logger.error(f"Failed to save debug screenshot: {e}")
+                            # Use our comprehensive emergency exit procedure
+                            exit_success = self._emergency_exit_application(f"Infinite loop detected at step {step_count + 1}")
                             
-                            # Emergency exit procedure: First try to click Dismiss (X) button
-                            logger.info("Activating emergency exit procedure for infinite loop")
-                            try:
-                                # Look for the dismiss (X) button by aria-label
-                                dismiss_button = self.page.locator('button[aria-label="Dismiss"], button[data-test-modal-close-btn]')
-                                if dismiss_button.count() > 0:
-                                    logger.info("Found Dismiss (X) button, clicking it")
-                                    dismiss_button.first.click(force=True, timeout=2000)
-                                    self.page.wait_for_timeout(1000)
-                                    
-                                    # After clicking X, look for and click the Discard button in the confirmation dialog
-                                    discard_button = self.page.locator('button:has-text("Discard"), button[data-control-name="discard_application_confirm_btn"]')
-                                    if discard_button.count() > 0:
-                                        logger.info("Found Discard button, clicking it to abort application")
-                                        discard_button.first.click(force=True, timeout=2000)
-                                        self.page.wait_for_timeout(1000)
-                                        logger.info("Successfully exited application via emergency procedure")
-                                    else:
-                                        logger.warning("Could not find Discard button after clicking Dismiss")
-                                else:
-                                    logger.warning("Could not find Dismiss (X) button for emergency exit")
-                            except Exception as exit_e:
-                                logger.error(f"Error during emergency exit procedure: {exit_e}")
-                                
                             self.failed_applications.append({
                                 "job": job_data,
-                                "reason": f"Infinite loop detected in application form at step {step_count + 1}, emergency exit activated",
+                                "reason": f"Infinite loop detected in application form at step {step_count + 1}, emergency exit {'successful' if exit_success else 'failed'}",
                                 "timestamp": datetime.now().isoformat()
                             })
                             self._save_application_data()
@@ -298,18 +484,26 @@ class ApplicationWizard:
                             return APPLICATION_SUCCESS
                         else:
                             logger.warning("Did not find Done button after submission")
+                            
+                            # Use emergency exit procedure since we're stuck after submission
+                            exit_success = self._emergency_exit_application("No Done button found after submission")
+                            
                             self.failed_applications.append({
                                 "job": job_data,
-                                "reason": "No Done button after submission",
+                                "reason": f"No Done button after submission, emergency exit {'successful' if exit_success else 'failed'}",
                                 "timestamp": datetime.now().isoformat()
                             })
                             self._save_application_data()
                             return APPLICATION_FAILURE
                     except PlaywrightError as e:
                         logger.error(f"Error clicking Submit button: {e}")
+                        
+                        # Use emergency exit procedure since submit failed
+                        exit_success = self._emergency_exit_application(f"Submit button click failed: {e}")
+                        
                         self.failed_applications.append({
                             "job": job_data,
-                            "reason": f"Error clicking Submit button: {e}",
+                            "reason": f"Error clicking Submit button: {e}, emergency exit {'successful' if exit_success else 'failed'}",
                             "timestamp": datetime.now().isoformat()
                         })
                         self._save_application_data()
@@ -340,9 +534,11 @@ class ApplicationWizard:
                         next_with_attr.first.evaluate("button => button.click()")
                         self.page.wait_for_timeout(1500)
                         step_count += 1
+                        stuck_detection_count = 0  # Reset stuck counter on successful navigation
                         continue
                     except PlaywrightError as e:
                         logger.warning(f"Error clicking official next button: {e}, will try alternatives")
+                        stuck_detection_count += 1
 
                 # Then try to find the specific footer Next button
                 footer_next = app_modal.locator("footer button:has-text('Next')")
@@ -355,9 +551,11 @@ class ApplicationWizard:
                         footer_next.first.evaluate("button => button.click()")
                         self.page.wait_for_timeout(1500)  # Wait for next step to load
                         step_count += 1
+                        stuck_detection_count = 0  # Reset stuck counter on successful navigation
                         continue
                     except PlaywrightError as e:
                         logger.warning(f"Error clicking Next button: {e}. Trying alternatives")
+                        stuck_detection_count += 1
 
                 # Try finding a button with "Continue to next step" aria-label (LinkedIn specific)
                 next_button = app_modal.locator("button[aria-label='Continue to next step']")
@@ -367,9 +565,11 @@ class ApplicationWizard:
                         next_button.first.evaluate("button => button.click()")
                         self.page.wait_for_timeout(1500)  # Wait for next step to load
                         step_count += 1
+                        stuck_detection_count = 0  # Reset stuck counter on successful navigation
                         continue
                     except PlaywrightError as e:
                         logger.warning(f"Error clicking aria-label Next button: {e}. Trying alternatives")
+                        stuck_detection_count += 1
 
                 # Try finding a button with "Review your application" aria-label (LinkedIn specific)
                 review_button = app_modal.locator("button[aria-label='Review your application'], button:has-text('Review')")
@@ -386,9 +586,11 @@ class ApplicationWizard:
                             
                         self.page.wait_for_timeout(1500)  # Wait for next step to load
                         step_count += 1
+                        stuck_detection_count = 0  # Reset stuck counter on successful navigation
                         continue
                     except PlaywrightError as e:
                         logger.warning(f"Error clicking Review button: {e}. Will try other approaches.")
+                        stuck_detection_count += 1
                         
                 # Finally, try a more general approach - any button with text "Next"
                 next_text_button = app_modal.locator("button:has-text('Next')")
@@ -398,9 +600,11 @@ class ApplicationWizard:
                         next_text_button.first.evaluate("button => button.click()")
                         self.page.wait_for_timeout(1500)  # Wait for next step to load
                         step_count += 1
+                        stuck_detection_count = 0  # Reset stuck counter on successful navigation
                         continue
                     except PlaywrightError as e:
                         logger.warning(f"Error clicking text Next button: {e}. Trying one last approach")
+                        stuck_detection_count += 1
                     
                 # Last resort - try to find any button that might be a next button by examining common CSS classes
                 # This is very specific to LinkedIn but helps with some edge cases
@@ -417,53 +621,89 @@ class ApplicationWizard:
                             last_button.evaluate("button => button.click()")
                             self.page.wait_for_timeout(1500)  # Wait for next step to load
                             step_count += 1
+                            stuck_detection_count = 0  # Reset stuck counter on successful navigation
                             continue
                     except PlaywrightError as e:
                         logger.error(f"Error clicking potential Next button: {e}")
+                        stuck_detection_count += 1
+                
+                # Check if we're stuck based on failed attempts
+                if stuck_detection_count >= max_stuck_attempts:
+                    logger.error(f"Application appears stuck after {stuck_detection_count} failed attempts to navigate")
+                    # Use emergency exit procedure for stuck applications
+                    exit_success = self._emergency_exit_application(f"Application stuck after {stuck_detection_count} failed navigation attempts")
+                    
+                    self.failed_applications.append({
+                        "job": job_data,
+                        "reason": f"Application stuck after {stuck_detection_count} failed navigation attempts, emergency exit {'successful' if exit_success else 'failed'}",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    self._save_application_data()
+                    return APPLICATION_FAILURE
                 
                 # If we get here, we couldn't find a working next button
                 logger.warning(f"Could not find a working Next button on step {step_count + 1}")
+                
+                # Use emergency exit procedure for stuck applications
+                exit_success = self._emergency_exit_application(f"No working Next button found on step {step_count + 1}")
+                
                 self.failed_applications.append({
                     "job": job_data,
-                    "reason": f"No working Next button found on step {step_count + 1}",
+                    "reason": f"No working Next button found on step {step_count + 1}, emergency exit {'successful' if exit_success else 'failed'}",
                     "timestamp": datetime.now().isoformat()
                 })
                 self._save_application_data()
-                return APPLICATION_INCOMPLETE
+                return APPLICATION_FAILURE
 
             # If we reach max steps without finding a Submit button
             logger.warning(f"Reached maximum step count ({max_steps}) without completing application")
+            
+            # Use emergency exit procedure for stuck applications
+            exit_success = self._emergency_exit_application(f"Reached max step count ({max_steps}) without completion")
+            
             self.failed_applications.append({
                 "job": job_data,
-                "reason": f"Reached max step count ({max_steps}) without Submit button",
+                "reason": f"Reached max step count ({max_steps}) without Submit button, emergency exit {'successful' if exit_success else 'failed'}",
                 "timestamp": datetime.now().isoformat()
             })
             self._save_application_data()
-            return APPLICATION_INCOMPLETE
+            return APPLICATION_FAILURE
 
         except TimeoutError as e:
             logger.error(f"Timeout during application process: {e}")
+            
+            # Use emergency exit procedure to ensure clean state after timeout
+            exit_success = self._emergency_exit_application(f"Timeout occurred: {e}")
+            
             self.failed_applications.append({
                 "job": job_data,
-                "reason": f"Timeout: {e}",
+                "reason": f"Timeout: {e}, emergency exit {'successful' if exit_success else 'failed'}",
                 "timestamp": datetime.now().isoformat()
             })
             self._save_application_data()
             return APPLICATION_FAILURE
         except PlaywrightError as e:
             logger.error(f"Playwright error during application process: {e}")
+            
+            # Use emergency exit procedure to ensure clean state after playwright error
+            exit_success = self._emergency_exit_application(f"Playwright error occurred: {e}")
+            
             self.failed_applications.append({
                 "job": job_data,
-                "reason": f"Playwright error: {e}",
+                "reason": f"Playwright error: {e}, emergency exit {'successful' if exit_success else 'failed'}",
                 "timestamp": datetime.now().isoformat()
             })
             self._save_application_data()
             return APPLICATION_FAILURE
         except Exception as e:
             logger.error(f"Unexpected error during application process: {e}")
+            
+            # Use emergency exit procedure to ensure clean state after unexpected error
+            exit_success = self._emergency_exit_application(f"Unexpected error occurred: {e}")
+            
             self.failed_applications.append({
                 "job": job_data,
-                "reason": f"Unexpected error: {e}",
+                "reason": f"Unexpected error: {e}, emergency exit {'successful' if exit_success else 'failed'}",
                 "timestamp": datetime.now().isoformat()
             })
             self._save_application_data()
