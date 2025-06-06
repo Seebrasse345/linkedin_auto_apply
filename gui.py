@@ -34,6 +34,7 @@ TOOLTIPS = {
     'low_number_applicants': 'Filter for jobs with <10 applicants.',
     # Runtime & Advanced
     'banned_words': 'Job titles with these words (one per line) are skipped.',
+    'banned_companies': 'Company names (one per line) that will be skipped. Uses exact matching (case-insensitive).',
     'headless': 'Run browser invisibly (True) or visibly (False).',
     'accept_cookies_selector': 'CSS selector for cookie accept button.',
     'random_delay_ms': 'Min/Max delay (ms) between actions.',
@@ -60,9 +61,15 @@ class Tooltip:
 
     def show(self, event=None):
         if self.tooltip_win or not self.text: return
-        x, y, _, _ = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 20
+        try:
+            x, y, _, _ = self.widget.bbox("insert")
+            x += self.widget.winfo_rootx() + 25
+            y += self.widget.winfo_rooty() + 20
+        except (TypeError, tk.TclError):
+            # Fallback for widgets that don't support bbox("insert")
+            x = self.widget.winfo_rootx() + 25
+            y = self.widget.winfo_rooty() + 20
+        
         self.tooltip_win = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
@@ -80,6 +87,7 @@ class AppConfigurator(tk.Tk):
         super().__init__()
         self.title("LinkedIn Bot Configurator")
         self.geometry("750x700")
+        self.minsize(750, 700)  # Ensure minimum size to show all content
 
         self.config_data = self.load_config()
         self.ai_prompt_settings = self.load_ai_prompt_settings()
@@ -92,23 +100,33 @@ class AppConfigurator(tk.Tk):
 
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(expand=True, fill='both')
+        
+        # Configure main_frame to properly distribute space
+        main_frame.rowconfigure(0, weight=1)  # Notebook gets most space
+        main_frame.rowconfigure(1, weight=0)  # Separator - no expansion
+        main_frame.rowconfigure(2, weight=0)  # Buttons - no expansion
+        main_frame.columnconfigure(0, weight=1)
 
         notebook = ttk.Notebook(main_frame)
-        notebook.pack(expand=True, fill='both', pady=5)
+        notebook.grid(row=0, column=0, sticky='nsew', pady=5)
 
         self.create_core_tab(notebook)
         self.create_filters_tab(notebook)
         self.create_runtime_tab(notebook)
         self.create_ai_settings_tab(notebook)
 
+        # Add separator and ensure button frame is visible
+        separator = ttk.Separator(main_frame, orient='horizontal')
+        separator.grid(row=1, column=0, sticky='ew', pady=5)
+
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=10)
+        button_frame.grid(row=2, column=0, sticky='ew', pady=10)
 
         self.start_button = ttk.Button(button_frame, text="Save Config & Start Bot", command=self.start_bot)
-        self.start_button.pack(side=tk.LEFT, padx=5)
+        self.start_button.pack(side=tk.LEFT, padx=5, pady=5)
         
         self.job_search_button = ttk.Button(button_frame, text="Job Search", command=self.open_job_search)
-        self.job_search_button.pack(side=tk.LEFT, padx=5)
+        self.job_search_button.pack(side=tk.LEFT, padx=5, pady=5)
 
         self.load_values_from_config()
         self.load_ai_values_to_gui()
@@ -319,7 +337,8 @@ class AppConfigurator(tk.Tk):
         parent.add(tab, text='Runtime & Advanced')
         tab.columnconfigure(0, weight=1)
         tab.rowconfigure(1, weight=1) # Banned words expands
-        tab.rowconfigure(2, weight=1) # Proxy pool expands
+        tab.rowconfigure(2, weight=1) # Banned companies expands
+        tab.rowconfigure(3, weight=1) # Proxy pool expands
 
         runtime_frame = ttk.LabelFrame(tab, text="Runtime Settings", padding=10)
         runtime_frame.grid(row=0, column=0, sticky='ew', padx=5, pady=5)
@@ -355,8 +374,13 @@ class AppConfigurator(tk.Tk):
         banned_frame.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
         self.create_scrolledtext(banned_frame, 'banned_words', height=6)
 
+        # Banned Companies section
+        banned_companies_frame = ttk.LabelFrame(tab, text="Banned Companies", padding=10)
+        banned_companies_frame.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        self.create_scrolledtext(banned_companies_frame, 'banned_companies', height=6)
+
         proxy_frame = ttk.LabelFrame(tab, text="Proxy Pool (Optional)", padding=10)
-        proxy_frame.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+        proxy_frame.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
         self.create_scrolledtext(proxy_frame, 'proxy_pool', height=4)
 
     def create_ai_settings_tab(self, parent):
@@ -489,11 +513,14 @@ class AppConfigurator(tk.Tk):
         self.vars['max_tabs'].set(runtime.get('max_tabs', 1))
         self.vars['log_level'].set(runtime.get('log_level', 'INFO'))
 
-        # Banned Words & Proxy Pool
-        for key in ['banned_words', 'proxy_pool']:
+        # Banned Words, Banned Companies & Proxy Pool
+        for key in ['banned_words', 'banned_companies', 'proxy_pool']:
             # Determine correct place to get data from config
             if key == 'banned_words':
                 # Get 'banned_words' directly from cfg, default to empty list
+                data_list = cfg.get(key, [])
+            elif key == 'banned_companies':
+                # Get 'banned_companies' directly from cfg, default to empty list
                 data_list = cfg.get(key, [])
             elif key == 'proxy_pool':
                 # Get 'proxy_pool' from runtime section, default to empty list
@@ -568,11 +595,14 @@ class AppConfigurator(tk.Tk):
         runtime['max_tabs'] = self.vars['max_tabs'].get()
         runtime['log_level'] = self.vars['log_level'].get()
 
-        # Banned Words & Proxy Pool
-        for key in ['banned_words', 'proxy_pool']:
+        # Banned Words, Banned Companies & Proxy Pool
+        for key in ['banned_words', 'banned_companies', 'proxy_pool']:
             # Determine correct place to get data from config
             if key == 'banned_words':
                 # Get 'banned_words' directly from cfg, default to empty list
+                data_list = cfg.get(key, [])
+            elif key == 'banned_companies':
+                # Get 'banned_companies' directly from cfg, default to empty list
                 data_list = cfg.get(key, [])
             elif key == 'proxy_pool':
                 # Get 'proxy_pool' from runtime section, default to empty list
@@ -584,6 +614,8 @@ class AppConfigurator(tk.Tk):
             data = widget.get('1.0', tk.END).strip().split('\n')
             data = [line for line in data if line] # Remove empty lines
             if key == 'banned_words':
+                cfg[key] = data
+            elif key == 'banned_companies':
                 cfg[key] = data
             else: # proxy_pool is under runtime
                  runtime[key] = data

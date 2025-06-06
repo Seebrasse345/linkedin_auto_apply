@@ -3,7 +3,7 @@ credentials:
   password: Bakumonsuno45!
 search_profiles:
 - name: graduate-data-uk
-  query: Software,Data,AI,Devops,Machine Learning,Automation,Developer,Python,graduate,junior
+  query: Software,AI, Automation, Data, Devops, Python, Developer,Graduate, Junior
   location: United Kingdom
   geoId: 101165590
   filters:
@@ -18,9 +18,9 @@ search_profiles:
     job_type:
     - full_time
     low_number_applicants: false
-    auto_easy: true
-    auto_recommend: false
-    date_posted_custom_hours_value: 10
+    auto_easy: false
+    auto_recommend: true
+    date_posted_custom_hours_value: 7
 banned_words:
 - business
 - support
@@ -207,6 +207,12 @@ banned_words:
 - freelancer
 - seasonal
 - service
+banned_companies:
+- iO Associates - UK/EU
+- Finitas
+- Client Server
+- Platform Recruitment
+- Spectrum IT Recruitment
 runtime:
   headless: false
   accept_cookies_selector: button[action-type="ACCEPT"]

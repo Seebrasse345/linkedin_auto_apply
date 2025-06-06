@@ -15,8 +15,14 @@ build/
 # Virtual environments
 venv/
 env/
+apply/cv.txt
 ENV/
-
+cookies/
+cookies/*
+config.yml
+data/*
+data/
+answers/default.json
 # IDE files
 .idea/
 .vscode/

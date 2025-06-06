@@ -171,6 +171,31 @@ def contains_banned_words(job_title: str, banned_words: List[str]) -> bool:
             
     return False
 
+def contains_banned_companies(company_name: str, banned_companies: List[str]) -> bool:
+    """Check if a company name exactly matches any of the banned companies.
+    
+    Args:
+        company_name: The company name to check.
+        banned_companies: List of banned company names to check against.
+        
+    Returns:
+        True if the company name exactly matches any banned companies, False otherwise.
+    """
+    if not company_name or not banned_companies:
+        return False
+        
+    # Convert company name to lowercase for case-insensitive comparison
+    company_name_lower = company_name.lower().strip()
+    
+    # Check if company name exactly matches any banned company
+    for banned_company in banned_companies:
+        banned_company_lower = banned_company.lower().strip()
+        if company_name_lower == banned_company_lower:
+            logger.info(f"Company '{company_name}' exactly matches banned company '{banned_company}'")
+            return True
+            
+    return False
+
 def load_previously_processed_jobs():
     """Load lists of successfully applied and failed applications from JSON files.
     
@@ -228,6 +253,13 @@ def load_all_job_cards(page: Page):
         logger.info(f"Loaded {len(banned_words)} banned words from config: {', '.join(banned_words)}")
     else:
         logger.info("No banned words found in config")
+    
+    # Load banned companies from config
+    banned_companies = config.get('banned_companies', [])
+    if banned_companies:
+        logger.info(f"Loaded {len(banned_companies)} banned companies from config: {', '.join(banned_companies)}")
+    else:
+        logger.info("No banned companies found in config")
     
     # Load previously processed job IDs
     successful_job_ids, failed_job_ids = load_previously_processed_jobs()
@@ -352,6 +384,11 @@ def load_all_job_cards(page: Page):
                 try:
                     company_elem = page.locator(DETAILS_PANE_COMPANY_SELECTOR).first
                     company_name = company_elem.inner_text(timeout=EXTRACT_TIMEOUT_MS // 2).strip()
+                    
+                    # Check if company name matches any banned companies
+                    if contains_banned_companies(company_name, banned_companies):
+                        logger.info(f"  Card {i+1}: Skipping job with banned company: '{company_name}'")
+                        continue  # Skip this job and move to the next one
                 except PlaywrightError as e_company:
                      logger.warning(f"  Card {i+1}: Failed to extract company from details pane: {e_company}")
 
