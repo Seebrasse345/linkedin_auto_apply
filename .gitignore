@@ -72,6 +72,9 @@ cv.txt
 test_output/
 temp/
 tmp/
+test_script/*
+!test_script/.gitkeep
+test_scripts/*
 
 # Browser data
 browser/profiles/
