@@ -176,23 +176,66 @@ def main():
                     logger.info(f"Profile '{profile_name}' has an empty 'query' field. Will search by location only.")
                     search_terms = [''] # Use a single empty term for location-only search
                 else:
-                    search_terms = [term.strip() for term in original_query_string.split(',') if term.strip()]
+                    # Split by comma and clean up terms
+                    raw_terms = [term.strip() for term in original_query_string.split(',') if term.strip()]
                     
-                    # If all terms were just whitespace, use a single empty term
+                    # Process terms in original order, converting special keywords to normalized form
+                    search_terms = []
+                    
+                    for term in raw_terms:
+                        term_lower = term.lower()
+                        if term_lower == "recommended":
+                            search_terms.append("recommended")
+                            logger.info(f"Found special keyword 'recommended' - will process Recommended jobs in sequence")
+                        elif term_lower in ["easy_apply", "easyapply"]:
+                            search_terms.append("easy_apply")
+                            logger.info(f"Found special keyword '{term}' - will process Easy Apply jobs in sequence")
+                        else:
+                            search_terms.append(term)
+                    
+                    # If all terms were just whitespace or no valid terms found
                     if not search_terms:
                         logger.info(f"Profile '{profile_name}' has only whitespace in query: '{original_query_string}'. Will search by location only.")
                         search_terms = ['']
                 
-                logger.info(f"Processing profile '{profile_name}' with search terms: {search_terms}")
+                logger.info(f"Processing profile '{profile_name}' with search sequence: {search_terms}")
                 
                 overall_profile_success_flag = False # Tracks if any term in this profile led to successful applications
 
                 for term_index, current_term in enumerate(search_terms):
-                    logger.info(f"--- Starting processing for term {term_index + 1}/{len(search_terms)}: '{current_term}' in profile '{profile_name}' ---")
+                    # Check if this is a special mode
+                    is_special_mode = current_term in ["recommended", "easy_apply"]
+                    
+                    if is_special_mode:
+                        logger.info(f"--- Starting processing for special mode {term_index + 1}/{len(search_terms)}: '{current_term}' in profile '{profile_name}' ---")
+                    else:
+                        logger.info(f"--- Starting processing for term {term_index + 1}/{len(search_terms)}: '{current_term}' in profile '{profile_name}' ---")
                     
                     # Create a temporary profile dictionary for the current search term
                     term_specific_profile = profile_config.copy()
-                    term_specific_profile['query'] = current_term # Set the specific query for this run
+                    
+                    if is_special_mode:
+                        # For special modes, clear the query and set the appropriate filter
+                        term_specific_profile['query'] = ''
+                        if 'filters' not in term_specific_profile:
+                            term_specific_profile['filters'] = {}
+                        
+                        # Clear any existing auto flags first
+                        term_specific_profile['filters']['auto_easy'] = False
+                        term_specific_profile['filters']['auto_recommend'] = False
+                        
+                        if current_term == "recommended":
+                            term_specific_profile['filters']['auto_recommend'] = True
+                            logger.info(f"Configured profile for Recommended jobs collection")
+                        elif current_term == "easy_apply":
+                            term_specific_profile['filters']['auto_easy'] = True
+                            logger.info(f"Configured profile for Easy Apply jobs collection")
+                    else:
+                        # For regular terms, set the query and ensure auto flags are off
+                        term_specific_profile['query'] = current_term
+                        if 'filters' in term_specific_profile:
+                            term_specific_profile['filters']['auto_easy'] = False
+                            term_specific_profile['filters']['auto_recommend'] = False
                     
                     try:
                         # run_profile_search now returns a list of job data or None
@@ -212,7 +255,8 @@ def main():
                             raise
 
                     if job_data_list_for_term is not None and job_data_list_for_term: # Check for non-None and non-empty list
-                        logger.info(f"Found {len(job_data_list_for_term)} jobs for term '{current_term}'. Initializing application process...")
+                        mode_description = f"special mode '{current_term}'" if is_special_mode else f"term '{current_term}'"
+                        logger.info(f"Found {len(job_data_list_for_term)} jobs for {mode_description}. Initializing application process...")
                         
                         #   !!! IMPORTANT !!!
                         #   Instantiate and use your ApplicationWizard here.
@@ -238,20 +282,25 @@ def main():
                         #   --------------------------------------------------------------------
                         #   Replace the above example with your actual ApplicationWizard logic.
                         #   For now, we'll just log that jobs were found and would be processed.
-                        logger.info(f"Placeholder: ApplicationWizard would process {len(job_data_list_for_term)} jobs for term '{current_term}'.")
+                        logger.info(f"Placeholder: ApplicationWizard would process {len(job_data_list_for_term)} jobs for {mode_description}.")
                         # Simulate some success for testing the loop structure
                         if job_data_list_for_term : overall_profile_success_flag = True
 
 
                     elif job_data_list_for_term is None: # Explicit error from run_profile_search
-                         logger.error(f"Search failed for term '{current_term}' in profile '{profile_name}'. See previous errors.")
+                        mode_description = f"special mode '{current_term}'" if is_special_mode else f"term '{current_term}'"
+                        logger.error(f"Search failed for {mode_description} in profile '{profile_name}'. See previous errors.")
                     else: # Empty list returned, meaning no jobs found
-                        logger.info(f"No jobs found for term '{current_term}' in profile '{profile_name}'.")
+                        mode_description = f"special mode '{current_term}'" if is_special_mode else f"term '{current_term}'"
+                        logger.info(f"No jobs found for {mode_description} in profile '{profile_name}'.")
 
                     # Delay between terms if there are more terms to process for this profile
                     if term_index < len(search_terms) - 1:
                         delay_between_terms_ms = config.get('runtime', {}).get('delay_between_terms_ms', 5000) # Default to 5s
-                        logger.info(f"Waiting for {delay_between_terms_ms / 1000.0:.1f}s before processing next term...")
+                        next_term = search_terms[term_index + 1]
+                        next_is_special = next_term in ["recommended", "easy_apply"]
+                        next_description = f"special mode '{next_term}'" if next_is_special else f"term '{next_term}'"
+                        logger.info(f"Waiting for {delay_between_terms_ms / 1000.0:.1f}s before processing next {next_description}...")
                         time.sleep(delay_between_terms_ms / 1000.0)
                 
                 profile_results[profile_name] = overall_profile_success_flag
