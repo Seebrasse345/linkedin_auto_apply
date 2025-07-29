@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EXTRA_INFORMATION = "Extra information user is Male, age 23, has BSc physics, living in Sheffield, England, United Kingdom, for years of experience quesitons use heuristics and CV information if not default to 2. For more generic questions like why do you want the role answer appropriately proffessionally using the CV and job description in full \n"
+DEFAULT_EXTRA_INFORMATION = " "
 
 # OpenAI API Configuration
 def get_openai_api_key() -> str:

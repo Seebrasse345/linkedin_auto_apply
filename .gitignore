@@ -4,8 +4,6 @@ __pycache__/
 *$py.class
 
 # Environment variables
-.env
-.env.*
 
 # Distribution / packaging
 dist/
@@ -14,8 +12,7 @@ build/
 
 # Virtual environments
 venv/
-env/
-ENV/
+
 
 # IDE files
 .idea/

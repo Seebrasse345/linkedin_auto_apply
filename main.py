@@ -16,6 +16,7 @@ from browser.context import load_config, get_authenticated_page
 from joblist.search import construct_search_url
 from joblist.scroll_loader import load_all_job_cards # Import the new function
 from apply import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
+from utils.premium_detector import check_and_handle_premium_redirect
 
 # Define root path relative to this file (main.py)
 ROOT_PATH = Path(__file__).parent.parent
@@ -56,6 +57,11 @@ def run_profile_search(page: Page, profile: dict, config: dict) -> Optional[List
         logger.info(f"Base navigation complete for '{profile_name}' (Query: '{current_query}'). Waiting briefly...")
         page.wait_for_timeout(5000)
         logger.info(f"Waited after navigation. Current URL: {page.url}")
+        
+        # Check for premium page redirect after navigation
+        if check_and_handle_premium_redirect(page):
+            logger.info(f"Handled premium page redirect after navigating to search URL for profile '{profile_name}'")
+            page.wait_for_timeout(2000)
 
         # --- Scroll and Extract Job Data ---
         logger.info(f"Attempting to scroll and load job cards for profile '{profile_name}' (Query: '{current_query}')...")
@@ -343,9 +349,17 @@ def main():
     finally:
         if browser_context and browser_context.browser.is_connected():
             try:
-                 logger.info("Closing browser...")
-                 browser_context.browser.close()
-                 logger.info("Browser closed.")
+                # Save cookies before closing browser
+                from browser.context import get_cookie_manager
+                cookie_manager = get_cookie_manager()
+                if cookie_manager:
+                    logger.info("Saving final cookie state before shutdown...")
+                    cookie_manager.save_cookies(force=True)
+                    cookie_manager.stop_periodic_save()
+                
+                logger.info("Closing browser...")
+                browser_context.browser.close()
+                logger.info("Browser closed.")
             except Exception as close_err:
                  logger.error(f"Error closing browser: {close_err}")
         end_time = time.time()

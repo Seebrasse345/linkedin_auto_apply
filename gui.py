@@ -60,7 +60,8 @@ TOOLTIPS = {
     'log_level': 'Logging detail (DEBUG, INFO, WARNING, ERROR).',
     'proxy_pool': 'Proxies (one per line, user:pass@host:port or host:port). Optional.',
     'date_posted_custom_hours_value': 'Specify hours (1-23) for custom date posted filter. Value is used if "Custom Hours" is selected.',
-    'ai_extra_information': 'Additional context for the AI when answering job application questions. This information will be injected into the prompt.'
+    'ai_extra_information': 'Additional context for the AI when answering job application questions. This information will be injected into the prompt.',
+    'cookie_save_interval': 'Interval in seconds for automatic cookie saving (default: 120 seconds). Lower values provide better protection against crashes.'
 }
 
 LOCATION_GEOID_MAP = {
@@ -602,6 +603,10 @@ class AppConfigurator(tk.Tk):
         
         self.create_combobox(runtime_frame, 'log_level', "📝 Log Level:", ["DEBUG", "INFO", "WARNING", "ERROR"], 4, 0, 
                              widget_kwargs={'width': 12})
+        
+        self.vars['cookie_save_interval'] = tk.IntVar()
+        self.create_entry(runtime_frame, 'cookie_save_interval', "🍪 Cookie Save Interval (s):", 5, 0, 
+                          widget_kwargs={'width': 8, 'textvariable': self.vars['cookie_save_interval']})
         runtime_frame.columnconfigure(1, weight=1)
 
         # Banned Keywords - Enhanced layout with proper sizing
@@ -808,6 +813,7 @@ class AppConfigurator(tk.Tk):
         self.vars['random_delay_ms_max'].set(delay[1] if isinstance(delay, list) and len(delay)>1 else 2200)
         self.vars['max_tabs'].set(runtime.get('max_tabs', 1))
         self.vars['log_level'].set(runtime.get('log_level', 'INFO'))
+        self.vars['cookie_save_interval'].set(runtime.get('cookie_save_interval', 120))
 
         # Banned Words, Banned Companies & Proxy Pool
         for key in ['banned_words', 'banned_companies', 'proxy_pool']:
@@ -885,6 +891,7 @@ class AppConfigurator(tk.Tk):
         runtime['random_delay_ms'] = [self.vars['random_delay_ms_min'].get(), self.vars['random_delay_ms_max'].get()]
         runtime['max_tabs'] = self.vars['max_tabs'].get()
         runtime['log_level'] = self.vars['log_level'].get()
+        runtime['cookie_save_interval'] = self.vars['cookie_save_interval'].get()
 
         # Banned Words, Banned Companies & Proxy Pool
         for key in ['banned_words', 'banned_companies', 'proxy_pool']:

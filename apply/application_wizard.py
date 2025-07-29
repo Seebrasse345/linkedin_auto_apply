@@ -23,6 +23,8 @@ from .constants import (
 )
 from .helpers import load_answers, save_answers, save_application_result, save_job_description
 from .form_processor import FormProcessor
+from utils.premium_detector import check_and_handle_premium_redirect
+from browser.context import save_cookies_now
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +55,7 @@ class ApplicationWizard:
         save_application_result(self.data_dir, job_id, success)
     
     def _save_application_data(self) -> None:
-        """Save application data to JSON files."""
+        """Save application data to JSON files and cookies."""
         # Save successful applications
         for app in self.successful_applications:
             job_data = app.get("job", {})
@@ -71,6 +73,12 @@ class ApplicationWizard:
             job_id = app.get("job", {}).get("id", "unknown")
             job_id = job_id if job_id != "unknown" else app.get("job", {}).get("job_id", "unknown")
             self._save_application_result(job_id, False)
+        
+        # Save cookies after processing applications to preserve session state
+        if save_cookies_now():
+            logger.info("Saved cookies after processing application data")
+        else:
+            logger.warning("Failed to save cookies after processing applications")
     
     def _emergency_exit_application(self, reason: str = "Unknown") -> bool:
         """
@@ -194,16 +202,22 @@ class ApplicationWizard:
             
             # Strategy 1: Try the comprehensive discard button selector
             try:
-                discard_button = self.page.locator(DISCARD_BUTTON_SELECTOR)
-                if discard_button.count() > 0:
-                    logger.info("Found discard button using comprehensive selector")
-                    discard_button.first.click(force=True, timeout=3000)
-                    self.page.wait_for_timeout(1000)
-                    discard_success = True
-                else:
-                    logger.warning("No discard button found with comprehensive selector")
+                    discard_button = self.page.locator(DISCARD_BUTTON_SELECTOR)
+                    if discard_button.count() > 0:
+                        logger.info("Found discard button using comprehensive selector")
+                        discard_button.first.click(force=True, timeout=3000)
+                        self.page.wait_for_timeout(1000)
+                        
+                        # Check for premium page redirect after discard button click
+                        if check_and_handle_premium_redirect(self.page):
+                            logger.info("Handled premium page redirect after clicking discard button")
+                            self.page.wait_for_timeout(1000)
+                        
+                        discard_success = True
+                    else:
+                        logger.warning("No discard button found with comprehensive selector")
             except Exception as e:
-                logger.warning(f"Error with comprehensive discard selector: {e}")
+                    logger.warning(f"Error with comprehensive discard selector: {e}")
             
             # Strategy 2: Try JavaScript approach for discard button
             if not discard_success:
@@ -251,6 +265,12 @@ class ApplicationWizard:
                     if "Success" in js_result:
                         logger.info(f"JavaScript discard approach succeeded: {js_result}")
                         self.page.wait_for_timeout(1000)
+                        
+                        # Check for premium page redirect after JavaScript discard button click
+                        if check_and_handle_premium_redirect(self.page):
+                            logger.info("Handled premium page redirect after JavaScript discard button click")
+                            self.page.wait_for_timeout(1000)
+                        
                         discard_success = True
                     else:
                         logger.warning(f"JavaScript discard approach failed: {js_result}")
@@ -328,6 +348,11 @@ class ApplicationWizard:
 
             while step_count < max_steps:
                 logger.info(f"Processing application step {step_count + 1}")
+
+                # Check for premium page redirect at the start of each step
+                if check_and_handle_premium_redirect(self.page):
+                    logger.info(f"Handled premium page redirect during application step {step_count + 1}")
+                    self.page.wait_for_timeout(1000)
 
                 # Locate the application modal
                 modal = self.page.locator(APPLICATION_MODAL_SELECTOR)
@@ -533,6 +558,12 @@ class ApplicationWizard:
                     try:
                         next_with_attr.first.evaluate("button => button.click()")
                         self.page.wait_for_timeout(1500)
+                        
+                        # Check for premium page redirect after clicking next button
+                        if check_and_handle_premium_redirect(self.page):
+                            logger.info(f"Handled premium page redirect after clicking official next button")
+                            self.page.wait_for_timeout(1000)
+                        
                         step_count += 1
                         stuck_detection_count = 0  # Reset stuck counter on successful navigation
                         continue
@@ -550,6 +581,12 @@ class ApplicationWizard:
                         # Use evaluate to force a click (more reliable than regular click)
                         footer_next.first.evaluate("button => button.click()")
                         self.page.wait_for_timeout(1500)  # Wait for next step to load
+                        
+                        # Check for premium page redirect after clicking footer next button
+                        if check_and_handle_premium_redirect(self.page):
+                            logger.info(f"Handled premium page redirect after clicking footer next button")
+                            self.page.wait_for_timeout(1000)
+                        
                         step_count += 1
                         stuck_detection_count = 0  # Reset stuck counter on successful navigation
                         continue

@@ -2,12 +2,14 @@ import yaml
 import json
 from pathlib import Path
 import logging
+import threading
+import time
+import atexit
 # Use sync_api for synchronous execution as initially requested
 from playwright.sync_api import sync_playwright, Playwright, Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 # Keep async imports for the example usage block if needed, or remove if sticking purely to sync
 from playwright.async_api import async_playwright
 import asyncio
-import time
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -15,6 +17,135 @@ logger = logging.getLogger(__name__)
 # Define root path relative to this file
 # Assuming this file is in linkedin_auto_apply/browser/
 ROOT_PATH = Path(__file__).parent.parent.parent
+
+class CookieManager:
+    """Enhanced cookie management with dynamic saving capabilities."""
+    
+    def __init__(self, context: BrowserContext, cookie_path: Path, save_interval: int = 120):
+        """
+        Initialize the cookie manager.
+        
+        Args:
+            context: Browser context to manage
+            cookie_path: Path to save cookies
+            save_interval: Interval in seconds between automatic saves (default 2 minutes)
+        """
+        self.context = context
+        self.cookie_path = cookie_path
+        self.save_interval = save_interval
+        self._stop_periodic_save = threading.Event()
+        self._periodic_thread = None
+        self._last_save_time = time.time()
+        self._save_lock = threading.Lock()
+        
+        # Register cleanup on exit
+        atexit.register(self.save_cookies_on_exit)
+        
+        # Start periodic saving
+        self.start_periodic_save()
+    
+    def save_cookies(self, force: bool = False) -> bool:
+        """
+        Save cookies to file with thread safety.
+        
+        Args:
+            force: Force save even if recently saved
+            
+        Returns:
+            bool: True if cookies were saved, False otherwise
+        """
+        current_time = time.time()
+        
+        # Don't save too frequently unless forced
+        if not force and (current_time - self._last_save_time) < 30:  # Min 30 seconds between saves
+            return False
+            
+        with self._save_lock:
+            try:
+                # Ensure directory exists
+                self.cookie_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Save storage state
+                self.context.storage_state(path=str(self.cookie_path))
+                self._last_save_time = current_time
+                
+                logger.debug(f"Cookies saved successfully to {self.cookie_path}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Failed to save cookies: {e}")
+                return False
+    
+    def start_periodic_save(self):
+        """Start the periodic cookie saving thread."""
+        if self._periodic_thread and self._periodic_thread.is_alive():
+            return
+            
+        self._stop_periodic_save.clear()
+        self._periodic_thread = threading.Thread(target=self._periodic_save_worker, daemon=True)
+        self._periodic_thread.start()
+        logger.info(f"Started periodic cookie saving every {self.save_interval} seconds")
+    
+    def stop_periodic_save(self):
+        """Stop the periodic cookie saving thread."""
+        if self._periodic_thread and self._periodic_thread.is_alive():
+            self._stop_periodic_save.set()
+            self._periodic_thread.join(timeout=5)
+            logger.info("Stopped periodic cookie saving")
+    
+    def _periodic_save_worker(self):
+        """Worker thread for periodic cookie saving."""
+        while not self._stop_periodic_save.wait(self.save_interval):
+            try:
+                # Check if context is still valid
+                if self.context and not self.context.browser.is_connected():
+                    logger.debug("Browser context disconnected, stopping periodic saves")
+                    break
+                    
+                self.save_cookies()
+                
+            except Exception as e:
+                logger.error(f"Error in periodic cookie save: {e}")
+    
+    def save_cookies_on_exit(self):
+        """Save cookies on application exit."""
+        try:
+            self.stop_periodic_save()
+            if self.context and self.context.browser.is_connected():
+                self.save_cookies(force=True)
+                logger.info("Saved cookies on application exit")
+        except Exception as e:
+            logger.error(f"Error saving cookies on exit: {e}")
+
+# Global cookie manager instance
+_cookie_manager = None
+
+def get_cookie_manager() -> CookieManager:
+    """Get the global cookie manager instance."""
+    global _cookie_manager
+    return _cookie_manager
+
+def set_cookie_manager(manager: CookieManager):
+    """Set the global cookie manager instance."""
+    global _cookie_manager
+    _cookie_manager = manager
+
+def save_cookies_now(force: bool = False) -> bool:
+    """
+    Manually save cookies using the global cookie manager.
+    
+    Args:
+        force: Force save even if recently saved
+        
+    Returns:
+        bool: True if cookies were saved, False otherwise
+    """
+    global _cookie_manager
+    if _cookie_manager:
+        return _cookie_manager.save_cookies(force=force)
+    else:
+        logger.warning("No cookie manager available for manual save")
+        return False
 
 def load_config(config_path: str | Path = "config.yml") -> dict:
     """Loads the YAML configuration file relative to the project root."""
@@ -147,8 +278,14 @@ def _perform_login(page: Page, context: BrowserContext, config: dict, cookie_pat
                   raise Exception("Login failed due to timeout after submitting credentials.")
 
         logger.info("Login successful. Saving session cookies.")
-        context.storage_state(path=str(cookie_path))
-        logger.info(f"Cookies saved to {cookie_path}")
+        # Create and set up cookie manager for dynamic saving
+        save_interval = config.get('runtime', {}).get('cookie_save_interval', 120)
+        cookie_manager = CookieManager(context, cookie_path, save_interval)
+        set_cookie_manager(cookie_manager)
+        
+        # Initial save after login
+        cookie_manager.save_cookies(force=True)
+        logger.info(f"Cookies saved to {cookie_path} with dynamic management enabled (interval: {save_interval}s)")
 
     except PlaywrightTimeoutError as e:
         error_message = f"Login failed: Timeout interacting with login elements. Error: {e}"
@@ -227,6 +364,11 @@ def get_authenticated_page(playwright: Playwright, config: dict) -> Page:
                  raise Exception("Login verification failed after interactive login.")
         else:
             logger.info("Already logged in via saved cookies (URL contains /feed/).")
+            # Set up cookie manager for existing session
+            save_interval = config.get('runtime', {}).get('cookie_save_interval', 120)
+            cookie_manager = CookieManager(context, cookie_path, save_interval)
+            set_cookie_manager(cookie_manager)
+            logger.info(f"Dynamic cookie management enabled for existing session (interval: {save_interval}s)")
 
         return page # Return the page, caller manages browser/context closure
 

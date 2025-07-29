@@ -9,6 +9,7 @@ from playwright.sync_api import Page, Locator, Error as PlaywrightError
 from typing import List, Dict, Set, Optional
 from apply import ApplicationWizard, APPLICATION_SUCCESS, APPLICATION_FAILURE, APPLICATION_INCOMPLETE
 from browser.context import load_config
+from utils.premium_detector import check_and_handle_premium_redirect
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +348,12 @@ def load_all_job_cards(page: Page):
                 logger.debug(f"  Card {i+1}: Waiting {POST_CLICK_DELAY_MS}ms for details pane to potentially load...")
                 page.wait_for_timeout(POST_CLICK_DELAY_MS)
                 
+                # Check for premium page redirect after clicking card
+                if check_and_handle_premium_redirect(page):
+                    logger.info(f"  Card {i+1}: Handled premium page redirect, continuing with job processing")
+                    # Wait a bit more after returning from premium page
+                    page.wait_for_timeout(1000)
+                
                 # Check for application limit message after clicking card
                 # This is especially important if clicking the card leads directly to a limit message
                 if detect_application_limit(page):
@@ -489,6 +496,12 @@ def load_all_job_cards(page: Page):
                             try:
                                 easy_apply_button.first.click(timeout=3000)  # Reduced timeout from 5000ms
                                 page.wait_for_timeout(1500)  # Wait for form to load (reduced from 2000ms)
+                                
+                                # Check for premium page redirect after clicking Easy Apply
+                                if check_and_handle_premium_redirect(page):
+                                    logger.info(f"    Handled premium page redirect after Easy Apply click for Job ID: {job_id}")
+                                    # Wait a bit more after returning from premium page
+                                    page.wait_for_timeout(1000)
                                 
                                 # Check for application limit after successful click
                                 if detect_application_limit(page):
@@ -686,6 +699,11 @@ def check_and_navigate_to_next_page(page: Page) -> bool:
                 # We'll use a shorter timeout per attempt but more attempts
                 page.wait_for_url(lambda url: url != current_url, timeout=8000)
                 logger.info("URL changed, checking for job listings...")
+                
+                # Check for premium page redirect after pagination navigation
+                if check_and_handle_premium_redirect(page):
+                    logger.info("Handled premium page redirect after pagination navigation")
+                    page.wait_for_timeout(1000)
                 
                 # Wait for page to stabilize
                 page.wait_for_timeout(8000)
